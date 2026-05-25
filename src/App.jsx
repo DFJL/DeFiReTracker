@@ -16,7 +16,7 @@ export default function App() {
   const [activeTab, setActiveTab] = useState('Dashboard')
   const [portfolioId, setPortfolioId] = useState(null)
 
-  const { portfolios, loading: loadingPortfolios, createPortfolio, deletePortfolio } = usePortfolios()
+  const { portfolios, userId, loading: loadingPortfolios, createPortfolio, claimPortfolio, sharePortfolio, deletePortfolio } = usePortfolios()
   const { transactions, loading: loadingTx, upsertTransaction, deleteTransaction, reload: reloadTx } = useTransactions(portfolioId)
 
   const assets = useMemo(() => {
@@ -48,6 +48,7 @@ export default function App() {
             ) : (
               <PortfolioSwitcher
                 portfolios={portfolios}
+                userId={userId}
                 selected={portfolioId}
                 onSelect={setPortfolioId}
                 onCreate={async name => {
@@ -55,6 +56,8 @@ export default function App() {
                   if (data) setPortfolioId(data.id)
                 }}
                 onDelete={handlePortfolioDelete}
+                onClaim={claimPortfolio}
+                onShare={sharePortfolio}
               />
             )}
           </div>
