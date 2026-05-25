@@ -30,6 +30,7 @@ export function PolymarketTracker({ portfolioId, portfolioName, onSummaryChange 
   const [consolidate, setConsolidate] = useState(
     () => localStorage.getItem(consolidateKey(portfolioId)) === 'true'
   )
+  const [showDebug, setShowDebug] = useState(false)
 
   // Reload addresses and consolidate flag when portfolio changes
   useEffect(() => {
@@ -153,6 +154,28 @@ export function PolymarketTracker({ portfolioId, portfolioName, onSummaryChange 
               </div>
             ))}
           </div>
+
+          {/* Debug panel */}
+          {positions.length > 0 && (
+            <div className="bg-surface-1 border border-border rounded-lg p-3">
+              <button
+                onClick={() => setShowDebug(v => !v)}
+                className="text-xs text-gray-500 hover:text-gray-300 transition-colors"
+              >
+                {showDebug ? '▾' : '▸'} Debug — raw API fields ({positions.length} positions, {open.length} open)
+              </button>
+              {showDebug && (
+                <pre className="mt-2 text-xs text-gray-400 overflow-x-auto max-h-64 leading-relaxed">
+                  {JSON.stringify(positions.slice(0, 5).map(p => ({
+                    size: p.size, avgPrice: p.avgPrice, currentPrice: p.currentPrice ?? p.price,
+                    initialValue: p.initialValue, currentValue: p.currentValue,
+                    redeemed: p.redeemed, closed: p.closed, outcome: p.outcome,
+                    title: (p.title ?? p.question ?? '').slice(0, 60),
+                  })), null, 2)}
+                </pre>
+              )}
+            </div>
+          )}
 
           {open.length === 0 ? (
             <div className="bg-surface-1 border border-border rounded-lg p-8 text-center text-gray-500 text-sm">
