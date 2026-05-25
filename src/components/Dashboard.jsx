@@ -15,7 +15,7 @@ function StatBox({ label, value, sub, valueClass = '' }) {
   )
 }
 
-export function Dashboard({ transactions, assets, prices, changes }) {
+export function Dashboard({ transactions, assets, prices, changes, pmktSummary }) {
   const { timeline, loading: loadingHistory, assetChanges } = usePortfolioHistory(transactions, assets)
   const [topPerfPeriod, setTopPerfPeriod] = useState('1D')
 
@@ -74,7 +74,17 @@ export function Dashboard({ transactions, assets, prices, changes }) {
     <div className="space-y-4">
       {/* Header stats — CoinGecko-style */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-2 md:gap-3">
-        <StatBox label="Current Balance" value={fmtUsd(totalValue)} />
+        <div className="bg-surface-1 border border-border rounded-lg px-4 py-3">
+          <div className="flex items-center gap-2 mb-0.5">
+            <p className="text-xs text-gray-500">Current Balance</p>
+            {pmktSummary && (
+              <span className="text-xs px-1 py-0.5 rounded bg-violet-900/40 text-violet-400">+PMKT</span>
+            )}
+          </div>
+          <p className="text-xl font-semibold num leading-tight">
+            {fmtUsd(totalValue + (pmktSummary?.value ?? 0))}
+          </p>
+        </div>
         <StatBox
           label="24h Portfolio Change"
           value={change24hUsd != null ? fmtUsd(change24hUsd) : '—'}
@@ -112,7 +122,7 @@ export function Dashboard({ transactions, assets, prices, changes }) {
 
       {/* Secondary stats */}
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 md:gap-3">
-        <StatBox label="Invested (cost basis)" value={fmtUsd(totalInvested)} />
+        <StatBox label="Invested (cost basis)" value={fmtUsd(totalInvested + (pmktSummary?.invested ?? 0))} />
         <StatBox
           label="Unrealized PnL"
           value={fmtUsd(totalUnrealized)}

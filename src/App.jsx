@@ -15,6 +15,7 @@ const TABS = ['Dashboard', 'Holdings', 'Transactions', 'Import CSV', 'Polymarket
 export default function App() {
   const [activeTab, setActiveTab] = useState('Dashboard')
   const [portfolioId, setPortfolioId] = useState(null)
+  const [pmktSummary, setPmktSummary] = useState(null)
 
   const { portfolios, userId, loading: loadingPortfolios, loadError, createPortfolio, claimPortfolio, sharePortfolio, deletePortfolio } = usePortfolios()
 
@@ -127,6 +128,7 @@ export default function App() {
               assets={assets}
               prices={prices}
               changes={changes}
+              pmktSummary={pmktSummary}
             />
           )}
 
@@ -156,7 +158,11 @@ export default function App() {
           )}
 
           {activeTab === 'Polymarket' && (
-            <PolymarketTracker />
+            <PolymarketTracker
+              portfolioId={portfolioId}
+              portfolioName={portfolios.find(p => p.id === portfolioId)?.name}
+              onSummaryChange={setPmktSummary}
+            />
           )}
         </div>
       </main>
