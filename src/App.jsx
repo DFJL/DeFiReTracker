@@ -16,7 +16,7 @@ export default function App() {
   const [activeTab, setActiveTab] = useState('Dashboard')
   const [portfolioId, setPortfolioId] = useState(null)
 
-  const { portfolios, userId, loading: loadingPortfolios, createPortfolio, claimPortfolio, sharePortfolio, deletePortfolio } = usePortfolios()
+  const { portfolios, userId, loading: loadingPortfolios, loadError, createPortfolio, claimPortfolio, sharePortfolio, deletePortfolio } = usePortfolios()
 
   // Auto-select the first portfolio so Claim/Share buttons are immediately visible
   useEffect(() => {
@@ -50,6 +50,8 @@ export default function App() {
             <span className="text-border hidden sm:inline">|</span>
             {loadingPortfolios ? (
               <span className="text-xs text-gray-600">Loading…</span>
+            ) : loadError ? (
+              <span className="text-xs text-red-400" title={loadError}>⚠ {loadError}</span>
             ) : (
               <PortfolioSwitcher
                 portfolios={portfolios}
@@ -57,7 +59,8 @@ export default function App() {
                 selected={portfolioId}
                 onSelect={setPortfolioId}
                 onCreate={async name => {
-                  const { data } = await createPortfolio(name)
+                  const { data, error } = await createPortfolio(name)
+                  if (error) alert(`Could not create portfolio: ${error.message}`)
                   if (data) setPortfolioId(data.id)
                 }}
                 onDelete={handlePortfolioDelete}
