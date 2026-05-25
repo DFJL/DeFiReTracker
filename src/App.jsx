@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react'
+import { useState, useMemo, useEffect } from 'react'
 import { usePortfolios } from './hooks/usePortfolios'
 import { useTransactions } from './hooks/useTransactions'
 import { usePrices } from './hooks/usePrices'
@@ -17,6 +17,11 @@ export default function App() {
   const [portfolioId, setPortfolioId] = useState(null)
 
   const { portfolios, userId, loading: loadingPortfolios, createPortfolio, claimPortfolio, sharePortfolio, deletePortfolio } = usePortfolios()
+
+  // Auto-select the first portfolio so Claim/Share buttons are immediately visible
+  useEffect(() => {
+    if (portfolios.length > 0 && !portfolioId) setPortfolioId(portfolios[0].id)
+  }, [portfolios])
   const { transactions, loading: loadingTx, upsertTransaction, deleteTransaction, reload: reloadTx } = useTransactions(portfolioId)
 
   const assets = useMemo(() => {
