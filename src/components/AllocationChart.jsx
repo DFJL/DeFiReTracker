@@ -53,7 +53,7 @@ export function AllocationChart({ assetRows, totalValue }) {
         </div>
       </div>
 
-      <div className="flex items-center gap-6">
+      <div className="flex flex-col sm:flex-row items-center gap-4 sm:gap-6">
         <ResponsiveContainer width={160} height={160}>
           <PieChart>
             <Pie data={slices} cx="50%" cy="50%" innerRadius={44} outerRadius={72}

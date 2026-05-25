@@ -7,8 +7,10 @@ import { Dashboard } from './components/Dashboard'
 import { HoldingsTable } from './components/HoldingsTable'
 import { TransactionManager } from './components/TransactionManager'
 import { CsvImporter } from './components/CsvImporter'
+import { PolymarketTracker } from './components/PolymarketTracker'
+import { supabase } from './lib/supabase'
 
-const TABS = ['Dashboard', 'Holdings', 'Transactions', 'Import CSV']
+const TABS = ['Dashboard', 'Holdings', 'Transactions', 'Import CSV', 'Polymarket']
 
 export default function App() {
   const [activeTab, setActiveTab] = useState('Dashboard')
@@ -36,11 +38,11 @@ export default function App() {
   return (
     <div className="min-h-screen bg-surface flex flex-col">
       {/* Header */}
-      <header className="border-b border-border bg-surface-1 px-6 py-3">
-        <div className="max-w-7xl mx-auto flex items-center justify-between gap-4 flex-wrap">
-          <div className="flex items-center gap-3">
-            <span className="text-accent font-semibold tracking-tight">DeFiReTracker</span>
-            <span className="text-border">|</span>
+      <header className="border-b border-border bg-surface-1 px-4 md:px-6 py-3">
+        <div className="max-w-7xl mx-auto flex items-center justify-between gap-3 flex-wrap">
+          <div className="flex items-center gap-2 md:gap-3 min-w-0">
+            <span className="text-accent font-semibold tracking-tight whitespace-nowrap text-sm md:text-base">DeFiReTracker</span>
+            <span className="text-border hidden sm:inline">|</span>
             {loadingPortfolios ? (
               <span className="text-xs text-gray-600">Loading…</span>
             ) : (
@@ -57,31 +59,37 @@ export default function App() {
             )}
           </div>
 
-          <div className="flex items-center gap-3 text-xs text-gray-500">
+          <div className="flex items-center gap-2 text-xs text-gray-500">
             {lastUpdated && (
-              <span>
-                Prices updated {lastUpdated.toLocaleTimeString()}
+              <span className="hidden sm:inline">
+                Updated {lastUpdated.toLocaleTimeString()}
               </span>
             )}
             <button
               onClick={refreshPrices}
               disabled={loadingPrices}
-              className="px-2.5 py-1 rounded border border-border hover:border-accent hover:text-accent transition-colors disabled:opacity-40"
+              className="px-2 py-1 rounded border border-border hover:border-accent hover:text-accent transition-colors disabled:opacity-40"
             >
-              {loadingPrices ? 'Refreshing…' : '↻ Refresh'}
+              {loadingPrices ? '…' : '↻'}
+            </button>
+            <button
+              onClick={() => supabase.auth.signOut()}
+              className="px-2 py-1 rounded border border-border hover:border-red-500 hover:text-red-400 transition-colors"
+            >
+              Sign out
             </button>
           </div>
         </div>
       </header>
 
-      {/* Tab bar */}
-      <nav className="border-b border-border bg-surface-1 px-6">
-        <div className="max-w-7xl mx-auto flex gap-0">
+      {/* Tab bar — scrollable on mobile */}
+      <nav className="border-b border-border bg-surface-1 px-4 md:px-6 overflow-x-auto">
+        <div className="max-w-7xl mx-auto flex gap-0 min-w-max">
           {TABS.map(tab => (
             <button
               key={tab}
               onClick={() => setActiveTab(tab)}
-              className={`px-4 py-2.5 text-sm border-b-2 transition-colors ${
+              className={`px-3 md:px-4 py-2.5 text-sm whitespace-nowrap border-b-2 transition-colors flex-shrink-0 ${
                 activeTab === tab
                   ? 'border-accent text-gray-100'
                   : 'border-transparent text-gray-500 hover:text-gray-300'
@@ -94,9 +102,9 @@ export default function App() {
       </nav>
 
       {/* Content */}
-      <main className="flex-1 px-6 py-6">
+      <main className="flex-1 px-4 md:px-6 py-4 md:py-6">
         <div className="max-w-7xl mx-auto">
-          {!portfolioId && activeTab !== 'Import CSV' && (
+          {!portfolioId && activeTab !== 'Import CSV' && activeTab !== 'Polymarket' && (
             <div className="mb-4 bg-surface-1 border border-border rounded-lg p-4 text-sm text-gray-400">
               Create or select a portfolio above to get started.
             </div>
@@ -134,6 +142,10 @@ export default function App() {
               portfolioId={portfolioId}
               onImported={reloadTx}
             />
+          )}
+
+          {activeTab === 'Polymarket' && (
+            <PolymarketTracker />
           )}
         </div>
       </main>

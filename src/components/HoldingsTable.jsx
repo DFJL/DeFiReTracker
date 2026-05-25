@@ -43,13 +43,13 @@ export function HoldingsTable({ transactions, assets, prices, changes }) {
         <thead>
           <tr className="border-b border-border text-xs text-gray-500 uppercase tracking-wider">
             <th className="px-4 py-3 text-left">Asset</th>
-            <th className="px-4 py-3 text-right">Price</th>
+            <th className="px-4 py-3 text-right hidden md:table-cell">Price</th>
             <th className="px-4 py-3 text-right">24h</th>
-            <th className="px-4 py-3 text-right">Holdings</th>
-            <th className="px-4 py-3 text-right">Avg Cost</th>
+            <th className="px-4 py-3 text-right hidden sm:table-cell">Holdings</th>
+            <th className="px-4 py-3 text-right hidden lg:table-cell">Avg Cost</th>
             <th className="px-4 py-3 text-right">Value</th>
             <th className="px-4 py-3 text-right">Unrealized</th>
-            <th className="px-4 py-3 text-right">Realized</th>
+            <th className="px-4 py-3 text-right hidden lg:table-cell">Realized</th>
           </tr>
         </thead>
         <tbody className="divide-y divide-border">
@@ -67,17 +67,17 @@ export function HoldingsTable({ transactions, assets, prices, changes }) {
                 </div>
                 <div className="text-xs text-gray-500 mt-0.5">{row.name}</div>
               </td>
-              <td className="px-4 py-3 text-right num text-gray-200">
+              <td className="px-4 py-3 text-right num text-gray-200 hidden md:table-cell">
                 {row.currentPrice != null ? fmtUsd(row.currentPrice) : <span className="text-gray-600">—</span>}
               </td>
               <td className={`px-4 py-3 text-right num text-xs ${pnlClass(row.change24h)}`}>
                 {row.change24h != null ? fmtPct(row.change24h) : <span className="text-gray-600">—</span>}
               </td>
-              <td className="px-4 py-3 text-right">
+              <td className="px-4 py-3 text-right hidden sm:table-cell">
                 <div className="num text-gray-200">{fmtQty(row.qty)}</div>
                 <div className="num text-xs text-gray-500">{fmtUsd(row.currentValue)}</div>
               </td>
-              <td className="px-4 py-3 text-right num text-gray-400">{fmtUsd(row.avgCost)}</td>
+              <td className="px-4 py-3 text-right num text-gray-400 hidden lg:table-cell">{fmtUsd(row.avgCost)}</td>
               <td className="px-4 py-3 text-right num text-gray-200">{fmtUsd(row.currentValue)}</td>
               <td className="px-4 py-3 text-right num">
                 {row.unrealizedPnl != null ? (
@@ -87,7 +87,7 @@ export function HoldingsTable({ transactions, assets, prices, changes }) {
                   </div>
                 ) : <span className="text-gray-600">—</span>}
               </td>
-              <td className={`px-4 py-3 text-right num ${pnlClass(row.realizedPnl)}`}>
+              <td className={`px-4 py-3 text-right num hidden lg:table-cell ${pnlClass(row.realizedPnl)}`}>
                 {fmtUsd(row.realizedPnl)}
               </td>
             </tr>

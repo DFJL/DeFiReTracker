@@ -73,7 +73,7 @@ export function Dashboard({ transactions, assets, prices, changes }) {
   return (
     <div className="space-y-4">
       {/* Header stats — CoinGecko-style */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-2 md:gap-3">
         <StatBox label="Current Balance" value={fmtUsd(totalValue)} />
         <StatBox
           label="24h Portfolio Change"
@@ -111,7 +111,7 @@ export function Dashboard({ transactions, assets, prices, changes }) {
       </div>
 
       {/* Secondary stats */}
-      <div className="grid grid-cols-2 lg:grid-cols-3 gap-3">
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 md:gap-3">
         <StatBox label="Invested (cost basis)" value={fmtUsd(totalInvested)} />
         <StatBox
           label="Unrealized PnL"
