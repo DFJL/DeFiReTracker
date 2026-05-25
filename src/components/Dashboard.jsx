@@ -28,7 +28,7 @@ export function Dashboard({ transactions, assets, prices }) {
       .filter(Boolean)
   }, [transactions, assets, prices])
 
-  const { totalValue, totalUnrealized, totalRealized, unrealizedPct, byCategory } =
+  const { totalValue, totalUnrealized, totalRealized, totalInvested, unrealizedPct, byCategory } =
     useMemo(() => aggregatePortfolio(assetRows), [assetRows])
 
   const pieData = Object.entries(byCategory)
