@@ -26,7 +26,7 @@ export default function App() {
   }, [transactions])
 
   const coingeckoIds = useMemo(() => assets.map(a => a.coingecko_id), [assets])
-  const { prices, lastUpdated, loading: loadingPrices, refresh: refreshPrices } = usePrices(coingeckoIds)
+  const { prices, changes, lastUpdated, loading: loadingPrices, refresh: refreshPrices } = usePrices(coingeckoIds)
 
   async function handlePortfolioDelete(id) {
     await deletePortfolio(id)
@@ -107,6 +107,7 @@ export default function App() {
               transactions={transactions}
               assets={assets}
               prices={prices}
+              changes={changes}
             />
           )}
 
@@ -115,6 +116,7 @@ export default function App() {
               transactions={transactions}
               assets={assets}
               prices={prices}
+              changes={changes}
             />
           )}
 

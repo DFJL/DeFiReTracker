@@ -4,7 +4,8 @@ import { fetchPrices, resetPriceCache } from '../lib/priceService'
 const REFRESH_INTERVAL = 60_000
 
 export function usePrices(coingeckoIds) {
-  const [prices, setPrices] = useState({})
+  const [prices, setPrices]   = useState({})
+  const [changes, setChanges] = useState({})
   const [lastUpdated, setLastUpdated] = useState(null)
   const [loading, setLoading] = useState(false)
   const timerRef = useRef(null)
@@ -14,8 +15,9 @@ export function usePrices(coingeckoIds) {
     if (force) resetPriceCache()
     setLoading(true)
     try {
-      const map = await fetchPrices(coingeckoIds)
-      setPrices(map)
+      const { prices: p, changes: c } = await fetchPrices(coingeckoIds)
+      setPrices(p)
+      setChanges(c)
       setLastUpdated(new Date())
     } finally {
       setLoading(false)
@@ -28,5 +30,5 @@ export function usePrices(coingeckoIds) {
     return () => clearInterval(timerRef.current)
   }, [JSON.stringify(coingeckoIds.slice().sort())])
 
-  return { prices, lastUpdated, loading, refresh: () => refresh(true) }
+  return { prices, changes, lastUpdated, loading, refresh: () => refresh(true) }
 }
