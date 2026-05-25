@@ -17,7 +17,6 @@ export function usePortfolioHistory(transactions, assets) {
     if (!assets.length || !transactions.length) return
     setLoading(true)
 
-    // Stagger requests slightly to avoid hitting rate limit
     Promise.all(
       assets.map((asset, i) =>
         new Promise(resolve => setTimeout(resolve, i * 300)).then(() =>
@@ -36,7 +35,6 @@ export function usePortfolioHistory(transactions, assets) {
   const timeline = useMemo(() => {
     if (!Object.keys(historicalPrices).length || !transactions.length || !assets.length) return []
 
-    // Build array of daily dates from first tx to today
     const start = new Date(fromDate)
     const end = new Date()
     const dates = []
@@ -50,27 +48,45 @@ export function usePortfolioHistory(transactions, assets) {
 
     return dates.map(date => {
       let totalValue = 0
+      let totalCost = 0
 
       for (const asset of assets) {
         const assetTxs = sortedTxs.filter(
           t => t.asset_id === asset.id && t.date.slice(0, 10) <= date
         )
 
-        let qty = 0
+        // Weighted avg cost basis replay
+        let runningQty = 0
+        let runningCost = 0
         for (const tx of assetTxs) {
-          if (['buy', 'transfer_in', 'earn'].includes(tx.type)) qty += Number(tx.qty)
-          else qty -= Number(tx.qty)
+          const qty = Number(tx.qty)
+          const price = Number(tx.price_usd)
+          const fee = Number(tx.fee_usd ?? 0)
+          if (['buy', 'transfer_in', 'earn'].includes(tx.type)) {
+            runningCost += qty * price + fee
+            runningQty += qty
+          } else {
+            const avg = runningQty > 0 ? runningCost / runningQty : 0
+            runningCost -= avg * qty
+            runningQty -= qty
+          }
         }
-        qty = Math.max(0, qty)
-        if (qty === 0) continue
 
+        runningQty = Math.max(0, runningQty)
+        runningCost = Math.max(0, runningCost)
+        totalCost += runningCost
+
+        if (runningQty === 0) continue
         const prices = historicalPrices[asset.id] ?? []
-        // Find closest price on or before this date
         const entry = [...prices].reverse().find(p => p.date <= date)
-        totalValue += qty * (entry?.price ?? 0)
+        totalValue += runningQty * (entry?.price ?? 0)
       }
 
-      return { date, value: Math.round(totalValue * 100) / 100 }
+      return {
+        date,
+        value: Math.round(totalValue * 100) / 100,
+        cost: Math.round(totalCost * 100) / 100,
+      }
     })
   }, [historicalPrices, transactions, assets, fromDate])
 

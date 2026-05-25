@@ -34,7 +34,8 @@ export function computeAssetPnl(transactions, currentPrice) {
   const unrealizedPct =
     avgCost > 0 && unrealizedPnl != null ? (unrealizedPnl / (avgCost * qty)) * 100 : null
 
-  return { qty, avgCost, realizedPnl, unrealizedPnl, unrealizedPct, currentValue }
+  const costBasis = Math.max(0, totalCost)
+  return { qty, avgCost, costBasis, realizedPnl, unrealizedPnl, unrealizedPct, currentValue }
 }
 
 /**
@@ -44,12 +45,14 @@ export function aggregatePortfolio(assetRows) {
   let totalValue = 0
   let totalUnrealized = 0
   let totalRealized = 0
+  let totalInvested = 0
   const byCategory = {}
 
   for (const row of assetRows) {
     totalValue += row.currentValue ?? 0
     totalUnrealized += row.unrealizedPnl ?? 0
     totalRealized += row.realizedPnl ?? 0
+    totalInvested += row.costBasis ?? 0
 
     const cat = row.category ?? 'spot'
     byCategory[cat] = (byCategory[cat] ?? 0) + (row.currentValue ?? 0)
@@ -58,5 +61,5 @@ export function aggregatePortfolio(assetRows) {
   const costBasis = totalValue - totalUnrealized
   const unrealizedPct = costBasis > 0 ? (totalUnrealized / costBasis) * 100 : 0
 
-  return { totalValue, totalUnrealized, totalRealized, unrealizedPct, byCategory }
+  return { totalValue, totalUnrealized, totalRealized, totalInvested, unrealizedPct, byCategory }
 }

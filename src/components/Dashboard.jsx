@@ -39,10 +39,14 @@ export function Dashboard({ transactions, assets, prices }) {
     <div className="space-y-6">
       <PortfolioChart timeline={timeline} loading={loadingHistory} />
 
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+      <div className="grid grid-cols-2 lg:grid-cols-5 gap-3">
         <StatCard
           label="Portfolio Value"
           value={fmtUsd(totalValue)}
+        />
+        <StatCard
+          label="Invested"
+          value={fmtUsd(totalInvested)}
         />
         <StatCard
           label="Unrealized PnL"
