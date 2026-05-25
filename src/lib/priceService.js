@@ -44,6 +44,14 @@ export async function fetchPrices(coingeckoIds) {
         prices[cgId] = v.usd
         changes[cgId] = v.usd_24h_change ?? null
       }
+
+      // Fallback: for IDs CoinGecko doesn't know (manual assets), use DB cache
+      const missingIds = coingeckoIds.filter(id => !(id in prices))
+      if (missingIds.length) {
+        const cached = await readFromDbCache(missingIds)
+        Object.assign(prices, cached)
+      }
+
       cachedChanges = changes
       return { prices, changes }
     } finally {

@@ -1,4 +1,4 @@
-import { useMemo } from 'react'
+import { useMemo, useState } from 'react'
 import { fmtUsd, fmtPct, pnlClass } from '../utils/format'
 import { computeAssetPnl, aggregatePortfolio } from '../utils/pnl'
 import { usePortfolioHistory } from '../hooks/usePortfolioHistory'
@@ -16,7 +16,8 @@ function StatBox({ label, value, sub, valueClass = '' }) {
 }
 
 export function Dashboard({ transactions, assets, prices, changes }) {
-  const { timeline, loading: loadingHistory } = usePortfolioHistory(transactions, assets)
+  const { timeline, loading: loadingHistory, assetChanges } = usePortfolioHistory(transactions, assets)
+  const [topPerfPeriod, setTopPerfPeriod] = useState('1D')
 
   const assetRows = useMemo(() => {
     return assets
@@ -33,26 +34,41 @@ export function Dashboard({ transactions, assets, prices, changes }) {
   const { totalValue, totalUnrealized, totalRealized, totalInvested, unrealizedPct, byCategory } =
     useMemo(() => aggregatePortfolio(assetRows), [assetRows])
 
-  // 24h portfolio change derived from per-asset 24h change%
-  const { change24hUsd, change24hPct, topPerformer } = useMemo(() => {
+  // 24h portfolio change
+  const { change24hUsd, change24hPct } = useMemo(() => {
     let prevValue = 0
-    let bestAsset = null
-    let bestPct = -Infinity
-
     for (const row of assetRows) {
       const chg = changes[row.coingecko_id]
       if (chg != null && row.currentValue > 0) {
         const prevPrice = (row.currentPrice ?? 0) / (1 + chg / 100)
         prevValue += row.qty * prevPrice
-
-        if (chg > bestPct) { bestPct = chg; bestAsset = { symbol: row.symbol, pct: chg } }
       }
     }
-
-    const change24hUsd = prevValue > 0 ? totalValue - prevValue : null
-    const change24hPct = prevValue > 0 ? ((totalValue - prevValue) / prevValue) * 100 : null
-    return { change24hUsd, change24hPct, topPerformer: bestAsset }
+    return {
+      change24hUsd: prevValue > 0 ? totalValue - prevValue : null,
+      change24hPct:  prevValue > 0 ? ((totalValue - prevValue) / prevValue) * 100 : null,
+    }
   }, [assetRows, changes, totalValue])
+
+  // Top performer — period-aware
+  const topPerformer = useMemo(() => {
+    let changesForPeriod
+    if (topPerfPeriod === '1D') {
+      changesForPeriod = changes
+    } else {
+      const key = topPerfPeriod === '7D' ? 'change7d' : 'change30d'
+      changesForPeriod = {}
+      for (const [cgId, v] of Object.entries(assetChanges)) changesForPeriod[cgId] = v[key]
+    }
+    let best = null, bestPct = -Infinity
+    for (const row of assetRows) {
+      const chg = changesForPeriod[row.coingecko_id]
+      if (chg != null && row.currentValue > 0 && chg > bestPct) {
+        bestPct = chg; best = { symbol: row.symbol, pct: chg }
+      }
+    }
+    return best
+  }, [assetRows, changes, assetChanges, topPerfPeriod])
 
   return (
     <div className="space-y-4">
@@ -71,12 +87,27 @@ export function Dashboard({ transactions, assets, prices, changes }) {
           sub={`Unrealized ${fmtUsd(totalUnrealized)}  ·  Realized ${fmtUsd(totalRealized)}`}
           valueClass={pnlClass(totalUnrealized + totalRealized)}
         />
-        <StatBox
-          label="Top Performer 24H"
-          value={topPerformer ? topPerformer.symbol : '—'}
-          sub={topPerformer ? fmtPct(topPerformer.pct) : undefined}
-          valueClass={topPerformer ? pnlClass(topPerformer.pct) : ''}
-        />
+        <div className="bg-surface-1 border border-border rounded-lg px-4 py-3">
+          <div className="flex items-center justify-between mb-0.5">
+            <p className="text-xs text-gray-500">Top Performer</p>
+            <div className="flex gap-0.5">
+              {['1D','7D','30D'].map(p => (
+                <button key={p} onClick={() => setTopPerfPeriod(p)}
+                  className={`px-1.5 py-0.5 text-xs rounded transition-colors ${
+                    topPerfPeriod === p ? 'bg-surface-3 text-gray-100' : 'text-gray-500 hover:text-gray-300'
+                  }`}>
+                  {p}
+                </button>
+              ))}
+            </div>
+          </div>
+          <p className={`text-xl font-semibold num leading-tight ${topPerformer ? pnlClass(topPerformer.pct) : ''}`}>
+            {topPerformer ? topPerformer.symbol : '—'}
+          </p>
+          {topPerformer && (
+            <p className={`text-xs mt-0.5 num ${pnlClass(topPerformer.pct)}`}>{fmtPct(topPerformer.pct)}</p>
+          )}
+        </div>
       </div>
 
       {/* Secondary stats */}

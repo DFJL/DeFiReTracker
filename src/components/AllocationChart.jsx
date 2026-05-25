@@ -4,7 +4,7 @@ import { fmtUsd, fmtPct } from '../utils/format'
 
 const ASSET_COLORS   = ['#6366f1','#22c55e','#f59e0b','#06b6d4','#ec4899','#8b5cf6']
 const CATEGORY_COLORS = { spot:'#6366f1', stablecoin:'#22c55e', defi:'#f59e0b', rwa:'#06b6d4' }
-const CHAIN_COLORS    = { hyperevm:'#6366f1', solana:'#9945ff', ethereum:'#627eea' }
+const CHAIN_COLORS    = { hyperevm:'#6366f1', solana:'#9945ff', ethereum:'#627eea', polygon:'#8247e5' }
 
 const VIEWS = ['Asset','Category','Blockchain']
 

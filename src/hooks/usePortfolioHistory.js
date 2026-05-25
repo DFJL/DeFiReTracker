@@ -90,5 +90,24 @@ export function usePortfolioHistory(transactions, assets) {
     })
   }, [historicalPrices, transactions, assets, fromDate])
 
-  return { timeline, loading }
+  const assetChanges = useMemo(() => {
+    const d7  = new Date(Date.now() - 7  * 86_400_000).toISOString().slice(0, 10)
+    const d30 = new Date(Date.now() - 30 * 86_400_000).toISOString().slice(0, 10)
+    const result = {}
+    for (const asset of assets) {
+      const prices = historicalPrices[asset.id] ?? []
+      if (!prices.length) continue
+      const sorted = [...prices].sort((a, b) => a.date.localeCompare(b.date))
+      const latest = sorted[sorted.length - 1]
+      const at7d  = [...sorted].reverse().find(p => p.date <= d7)
+      const at30d = [...sorted].reverse().find(p => p.date <= d30)
+      result[asset.coingecko_id] = {
+        change7d:  at7d  && at7d.price  > 0 ? ((latest.price - at7d.price)  / at7d.price)  * 100 : null,
+        change30d: at30d && at30d.price > 0 ? ((latest.price - at30d.price) / at30d.price) * 100 : null,
+      }
+    }
+    return result
+  }, [historicalPrices, assets])
+
+  return { timeline, loading, assetChanges }
 }

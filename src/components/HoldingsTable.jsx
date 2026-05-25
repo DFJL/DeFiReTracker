@@ -12,6 +12,7 @@ const CHAIN_BADGE = {
   hyperevm: 'bg-indigo-900/40 text-indigo-400',
   solana:   'bg-purple-900/40 text-purple-400',
   ethereum: 'bg-blue-900/40 text-blue-400',
+  polygon:  'bg-violet-900/40 text-violet-400',
 }
 
 export function HoldingsTable({ transactions, assets, prices, changes }) {
