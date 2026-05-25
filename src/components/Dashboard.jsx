@@ -3,6 +3,8 @@ import { PieChart, Pie, Cell, Tooltip, ResponsiveContainer } from 'recharts'
 import { StatCard } from './ui/Card'
 import { fmtUsd, fmtPct, pnlClass } from '../utils/format'
 import { computeAssetPnl, aggregatePortfolio } from '../utils/pnl'
+import { usePortfolioHistory } from '../hooks/usePortfolioHistory'
+import { PortfolioChart } from './PortfolioChart'
 
 const CATEGORY_COLORS = {
   spot: '#6366f1',
@@ -12,6 +14,8 @@ const CATEGORY_COLORS = {
 }
 
 export function Dashboard({ transactions, assets, prices }) {
+  const { timeline, loading: loadingHistory } = usePortfolioHistory(transactions, assets)
+
   const assetRows = useMemo(() => {
     return assets
       .map(asset => {
@@ -33,6 +37,8 @@ export function Dashboard({ transactions, assets, prices }) {
 
   return (
     <div className="space-y-6">
+      <PortfolioChart timeline={timeline} loading={loadingHistory} />
+
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
         <StatCard
           label="Portfolio Value"
