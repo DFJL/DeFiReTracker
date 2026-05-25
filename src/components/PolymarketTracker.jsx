@@ -25,6 +25,7 @@ export function PolymarketTracker({ portfolioId, portfolioName, onSummaryChange 
   })
   const [input, setInput]       = useState('')
   const [positions, setPositions] = useState([])
+  const [cashBalance, setCashBalance] = useState(0)
   const [loading, setLoading]   = useState(false)
   const [error, setError]       = useState(null)
   const [consolidate, setConsolidate] = useState(
@@ -38,6 +39,7 @@ export function PolymarketTracker({ portfolioId, portfolioName, onSummaryChange 
     catch { setAddresses([]) }
     setConsolidate(localStorage.getItem(consolidateKey(portfolioId)) === 'true')
     setPositions([])
+    setCashBalance(0)
     setError(null)
   }, [portfolioId])
 
@@ -63,10 +65,13 @@ export function PolymarketTracker({ portfolioId, portfolioName, onSummaryChange 
   }
 
   useEffect(() => {
-    if (!addresses.length) { setPositions([]); return }
+    if (!addresses.length) { setPositions([]); setCashBalance(0); return }
     setLoading(true); setError(null)
     Promise.all(addresses.map(fetchPolymarketPositions))
-      .then(results => setPositions(results.flat()))
+      .then(results => {
+        setPositions(results.flatMap(r => r.positions))
+        setCashBalance(results.reduce((s, r) => s + r.cashBalance, 0))
+      })
       .catch(e => setError(e.message))
       .finally(() => setLoading(false))
   }, [addresses.join(',')])
@@ -74,19 +79,18 @@ export function PolymarketTracker({ portfolioId, portfolioName, onSummaryChange 
   // Open = still holding shares (not redeemed)
   const open = positions.filter(p => Number(p.size ?? 0) > 0 && !p.redeemed)
 
-  // Fix: invested = size × avgPrice (actual USDC spent)
-  // initialValue from Polymarket = notional face value (size × $1), NOT cost
-  const totalValue    = open.reduce((s, p) => s + Number(p.currentValue ?? (Number(p.size) * Number(p.currentPrice ?? p.price ?? 0))), 0)
-  const totalInvested = open.reduce((s, p) => s + Number(p.size) * Number(p.avgPrice ?? 0), 0)
-  const totalPnl      = totalValue - totalInvested
+  const positionsValue = open.reduce((s, p) => s + Number(p.currentValue ?? (Number(p.size) * Number(p.currentPrice ?? p.price ?? 0))), 0)
+  const totalValue     = positionsValue + cashBalance
+  const totalInvested  = open.reduce((s, p) => s + Number(p.initialValue ?? (Number(p.size) * Number(p.avgPrice ?? 0))), 0)
+  const totalPnl       = totalValue - totalInvested
 
   // Notify parent so Dashboard can consolidate
   useEffect(() => {
-    onSummaryChange?.(consolidate && open.length > 0
+    onSummaryChange?.(consolidate && (open.length > 0 || cashBalance > 0)
       ? { value: totalValue, invested: totalInvested }
       : null
     )
-  }, [consolidate, totalValue, totalInvested, open.length])
+  }, [consolidate, totalValue, totalInvested, open.length, cashBalance])
 
   return (
     <div className="space-y-4">
@@ -143,16 +147,23 @@ export function PolymarketTracker({ portfolioId, portfolioName, onSummaryChange 
         <>
           {/* Summary */}
           <div className="grid grid-cols-3 gap-3">
-            {[
-              { label: 'Current Value', value: fmtUsd(totalValue), cls: '' },
-              { label: 'Invested',      value: fmtUsd(totalInvested), cls: '' },
-              { label: 'Total PnL',     value: fmtUsd(totalPnl), cls: pnlClass(totalPnl) },
-            ].map(({ label, value, cls }) => (
-              <div key={label} className="bg-surface-1 border border-border rounded-lg px-4 py-3">
-                <p className="text-xs text-gray-500 mb-0.5">{label}</p>
-                <p className={`text-xl font-semibold num ${cls}`}>{value}</p>
-              </div>
-            ))}
+            <div className="bg-surface-1 border border-border rounded-lg px-4 py-3">
+              <p className="text-xs text-gray-500 mb-0.5">Current Value</p>
+              <p className="text-xl font-semibold num">{fmtUsd(totalValue)}</p>
+              {cashBalance > 0 && (
+                <p className="text-xs text-gray-500 mt-0.5">
+                  {fmtUsd(positionsValue)} positions · {fmtUsd(cashBalance)} PUSD
+                </p>
+              )}
+            </div>
+            <div className="bg-surface-1 border border-border rounded-lg px-4 py-3">
+              <p className="text-xs text-gray-500 mb-0.5">Invested</p>
+              <p className="text-xl font-semibold num">{fmtUsd(totalInvested)}</p>
+            </div>
+            <div className="bg-surface-1 border border-border rounded-lg px-4 py-3">
+              <p className="text-xs text-gray-500 mb-0.5">Total PnL</p>
+              <p className={`text-xl font-semibold num ${pnlClass(totalPnl)}`}>{fmtUsd(totalPnl)}</p>
+            </div>
           </div>
 
           {/* Debug panel */}
