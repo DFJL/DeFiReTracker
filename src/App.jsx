@@ -92,6 +92,12 @@ export default function App() {
     setPortfolioId(null)
   }
 
+  async function updateAsset(assetId, updates) {
+    const { error } = await supabase.from('assets').update(updates).eq('id', assetId)
+    if (!error) { reloadTx(); refreshPrices() }
+    return { error }
+  }
+
   const activeTabDef = TABS.find(t => t.id === activeTab) ?? TABS[0]
 
   return (
@@ -198,6 +204,7 @@ export default function App() {
               prices={prices}
               changes={changes}
               pmktPositions={pmkt.open}
+              onUpdateAsset={updateAsset}
             />
           )}
 
