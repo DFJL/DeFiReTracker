@@ -4,10 +4,11 @@ import { fetchPrices, resetPriceCache } from '../lib/priceService'
 const REFRESH_INTERVAL = 60_000
 
 export function usePrices(coingeckoIds) {
-  const [prices, setPrices]   = useState({})
-  const [changes, setChanges] = useState({})
+  const [prices, setPrices]         = useState({})
+  const [changes, setChanges]       = useState({})
+  const [marketData, setMarketData] = useState({})
   const [lastUpdated, setLastUpdated] = useState(null)
-  const [loading, setLoading] = useState(false)
+  const [loading, setLoading]       = useState(false)
   const timerRef = useRef(null)
 
   async function refresh(force = false) {
@@ -15,9 +16,10 @@ export function usePrices(coingeckoIds) {
     if (force) resetPriceCache()
     setLoading(true)
     try {
-      const { prices: p, changes: c } = await fetchPrices(coingeckoIds)
+      const { prices: p, changes: c, marketData: md } = await fetchPrices(coingeckoIds)
       setPrices(p)
       setChanges(c)
+      setMarketData(md)
       setLastUpdated(new Date())
     } finally {
       setLoading(false)
@@ -25,10 +27,10 @@ export function usePrices(coingeckoIds) {
   }
 
   useEffect(() => {
-    refresh(true) // force a live fetch whenever the set of tracked assets changes
+    refresh(true)
     timerRef.current = setInterval(() => refresh(), REFRESH_INTERVAL)
     return () => clearInterval(timerRef.current)
   }, [JSON.stringify(coingeckoIds.slice().sort())])
 
-  return { prices, changes, lastUpdated, loading, refresh: () => refresh(true) }
+  return { prices, changes, marketData, lastUpdated, loading, refresh: () => refresh(true) }
 }

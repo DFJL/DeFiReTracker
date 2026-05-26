@@ -6,14 +6,15 @@ const CACHE_TTL_MS = 60_000
 let lastFetchedAt = null
 let inFlightPromise = null
 let cachedChanges = {}
+let cachedMarketData = {}
 
 export async function fetchPrices(coingeckoIds) {
-  if (!coingeckoIds.length) return { prices: {}, changes: {} }
+  if (!coingeckoIds.length) return { prices: {}, changes: {}, marketData: {} }
 
   const now = Date.now()
   if (lastFetchedAt && now - lastFetchedAt < CACHE_TTL_MS) {
     const prices = await readFromDbCache(coingeckoIds)
-    return { prices, changes: cachedChanges }
+    return { prices, changes: cachedChanges, marketData: cachedMarketData }
   }
 
   if (inFlightPromise) return inFlightPromise
@@ -22,15 +23,16 @@ export async function fetchPrices(coingeckoIds) {
     try {
       const ids = coingeckoIds.join(',')
       const res = await fetch(
-        `${COINGECKO_BASE}/simple/price?ids=${ids}&vs_currencies=usd&include_24hr_change=true`
+        `${COINGECKO_BASE}/coins/markets?vs_currency=usd&ids=${ids}` +
+        `&sparkline=true&price_change_percentage=1h,7d,30d&per_page=250`
       )
       if (!res.ok) throw new Error(`CoinGecko ${res.status}`)
       const data = await res.json()
 
-      const upserts = Object.entries(data).map(([cgId, v]) => ({
-        coingecko_id: cgId,
-        symbol: cgId,
-        price_usd: v.usd,
+      const upserts = data.map(coin => ({
+        coingecko_id: coin.id,
+        symbol: coin.id,
+        price_usd: coin.current_price,
         updated_at: new Date().toISOString(),
       }))
       if (upserts.length) {
@@ -40,12 +42,21 @@ export async function fetchPrices(coingeckoIds) {
       lastFetchedAt = Date.now()
       const prices = {}
       const changes = {}
-      for (const [cgId, v] of Object.entries(data)) {
-        prices[cgId] = v.usd
-        changes[cgId] = v.usd_24h_change ?? null
+      const marketData = {}
+
+      for (const coin of data) {
+        prices[coin.id] = coin.current_price
+        changes[coin.id] = coin.price_change_percentage_24h ?? null
+        marketData[coin.id] = {
+          change1h:  coin.price_change_percentage_1h_in_currency ?? null,
+          change24h: coin.price_change_percentage_24h ?? null,
+          change7d:  coin.price_change_percentage_7d_in_currency ?? null,
+          change30d: coin.price_change_percentage_30d_in_currency ?? null,
+          sparkline: coin.sparkline_in_7d?.price ?? [],
+        }
       }
 
-      // Fallback: for IDs CoinGecko doesn't know (manual assets), use DB cache
+      // Fallback for IDs CoinGecko doesn't know
       const missingIds = coingeckoIds.filter(id => !(id in prices))
       if (missingIds.length) {
         const cached = await readFromDbCache(missingIds)
@@ -53,7 +64,8 @@ export async function fetchPrices(coingeckoIds) {
       }
 
       cachedChanges = changes
-      return { prices, changes }
+      cachedMarketData = marketData
+      return { prices, changes, marketData }
     } finally {
       inFlightPromise = null
     }
@@ -76,8 +88,6 @@ export function resetPriceCache() {
   lastFetchedAt = null
 }
 
-// Search CoinGecko for the best matching coin by symbol.
-// Returns { id, name } or null if nothing found.
 export async function lookupCoinGeckoId(symbol) {
   try {
     const res = await fetch(`${COINGECKO_BASE}/search?query=${encodeURIComponent(symbol)}`)
