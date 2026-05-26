@@ -24,7 +24,6 @@ export function PolymarketTracker({ portfolioId, portfolioName, onSummaryChange 
   const [cashBalance, setCashBalance] = useState(null)
   const [netDeposited, setNetDeposited] = useState(null)
   const [proxyWallets, setProxyWallets] = useState([])
-  const [apiDebug, setApiDebug]   = useState([])
   const [loading, setLoading]     = useState(false)
   const [error, setError]         = useState(null)
   const [consolidate, setConsolidate] = useState(
@@ -41,7 +40,6 @@ export function PolymarketTracker({ portfolioId, portfolioName, onSummaryChange 
     setCashBalance(null)
     setNetDeposited(null)
     setProxyWallets([])
-    setApiDebug([])
     setError(null)
   }, [portfolioId])
 
@@ -71,7 +69,6 @@ export function PolymarketTracker({ portfolioId, portfolioName, onSummaryChange 
       setPositions([])
       setCashBalance(null)
       setNetDeposited(null)
-      setApiDebug([])
       return
     }
     setLoading(true); setError(null)
@@ -83,7 +80,6 @@ export function PolymarketTracker({ portfolioId, portfolioName, onSummaryChange 
         setCashBalance(totalCash)
         setNetDeposited(totalDeposited > 0 ? totalDeposited : null)
         setProxyWallets(results.map(r => r.proxyWallet).filter(Boolean))
-        setApiDebug(results.flatMap(r => r._debug ?? []))
       })
       .catch(e => setError(e.message))
       .finally(() => setLoading(false))
@@ -203,7 +199,6 @@ export function PolymarketTracker({ portfolioId, portfolioName, onSummaryChange 
                   cashBalance,
                   netDeposited,
                   proxyWallets,
-                  apiProbes: apiDebug,
                   sample: positions.slice(0, 3).map(p => ({
                     size: p.size, avgPrice: p.avgPrice, currentPrice: p.currentPrice ?? p.price,
                     initialValue: p.initialValue, currentValue: p.currentValue,
