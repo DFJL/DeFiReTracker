@@ -1,7 +1,8 @@
 import { useState, useEffect } from 'react'
 import { supabase } from '../lib/supabase'
 
-const TX_TYPES = ['buy', 'sell', 'transfer_in', 'transfer_out', 'earn']
+const TX_TYPES = ['buy', 'sell', 'transfer_in', 'transfer_out', 'earn', 'deposit', 'withdrawal']
+const CASH_TYPES = new Set(['deposit', 'withdrawal'])
 const CATEGORIES = ['spot', 'stablecoin', 'defi', 'rwa']
 
 const EMPTY = {
@@ -69,6 +70,8 @@ export function TransactionForm({ portfolioId, initial, nlPrefill, onSave, onCan
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState(null)
 
+  const isCash = CASH_TYPES.has(form.type)
+
   // Auto-search asset when pre-filled from NL
   useEffect(() => {
     if (nlPrefill?.symbol && !form._assetId) {
@@ -128,15 +131,18 @@ export function TransactionForm({ portfolioId, initial, nlPrefill, onSave, onCan
     setError(null)
     setSaving(true)
     try {
-      const assetId = await ensureAsset()
-      if (!assetId) { setError('Select or create an asset first'); return }
+      let assetId = null
+      if (!isCash) {
+        assetId = await ensureAsset()
+        if (!assetId) { setError('Select or create an asset first'); return }
+      }
 
       const payload = {
         portfolio_id: portfolioId,
         asset_id: assetId,
         type: form.type,
         qty: parseFloat(form.qty),
-        price_usd: parseFloat(form.price_usd),
+        price_usd: isCash ? 1 : parseFloat(form.price_usd),
         fee_usd: parseFloat(form.fee_usd || '0'),
         date: new Date(form.date).toISOString(),
         notes: form.notes || null,
@@ -161,79 +167,110 @@ export function TransactionForm({ portfolioId, initial, nlPrefill, onSave, onCan
         </div>
       )}
 
-      {/* Asset picker */}
-      <div className="relative">
-        <label className={labelCls}>Asset</label>
-        <input
-          value={form._assetSearch}
-          onChange={e => set('_assetSearch', e.target.value)}
-          placeholder="Search symbol or name…"
-          className={inputCls}
-          autoComplete="off"
-        />
-        {assetResults.length > 0 && (
-          <div className="absolute z-20 w-full mt-1 bg-surface-2 border border-border rounded shadow-xl">
-            {assetResults.map(a => (
-              <button
-                key={a.id}
-                type="button"
-                onClick={() => selectAsset(a)}
-                className="w-full text-left px-3 py-2 text-sm hover:bg-surface-3 flex items-center gap-2"
-              >
-                <span className="font-semibold text-gray-100">{a.symbol}</span>
-                <span className="text-gray-400">{a.name}</span>
-              </button>
-            ))}
-          </div>
-        )}
-        {!form._assetId && form._assetSearch && (
-          <div className="mt-2 grid grid-cols-3 gap-2">
-            <div>
-              <label className={labelCls}>CoinGecko ID</label>
-              <input value={form._coingeckoId} onChange={e => set('_coingeckoId', e.target.value)} placeholder="bitcoin" className={inputCls} />
-            </div>
-            <div>
-              <label className={labelCls}>Symbol</label>
-              <input value={form._symbol} onChange={e => set('_symbol', e.target.value)} placeholder="BTC" className={inputCls} />
-            </div>
-            <div>
-              <label className={labelCls}>Category</label>
-              <select value={form._category} onChange={e => set('_category', e.target.value)} className={inputCls}>
-                {CATEGORIES.map(c => <option key={c}>{c}</option>)}
-              </select>
-            </div>
-          </div>
-        )}
-      </div>
-
+      {/* Type selector always visible */}
       <div className="grid grid-cols-2 gap-3">
         <div>
           <label className={labelCls}>Type</label>
           <select value={form.type} onChange={e => set('type', e.target.value)} className={inputCls}>
-            {TX_TYPES.map(t => <option key={t}>{t}</option>)}
+            <optgroup label="Trades">
+              {['buy','sell'].map(t => <option key={t}>{t}</option>)}
+            </optgroup>
+            <optgroup label="Transfers">
+              {['transfer_in','transfer_out','earn'].map(t => <option key={t}>{t.replace('_',' ')}</option>)}
+            </optgroup>
+            <optgroup label="Cash flows">
+              {['deposit','withdrawal'].map(t => <option key={t}>{t}</option>)}
+            </optgroup>
           </select>
         </div>
         <div>
           <label className={labelCls}>Date</label>
           <input type="datetime-local" value={form.date} onChange={e => set('date', e.target.value)} className={inputCls} />
         </div>
-        <div>
-          <label className={labelCls}>Quantity</label>
-          <input type="number" step="any" value={form.qty} onChange={e => set('qty', e.target.value)} placeholder="0.00" className={inputCls} required />
-        </div>
-        <div>
-          <label className={labelCls}>Price (USD)</label>
-          <input type="number" step="any" value={form.price_usd} onChange={e => set('price_usd', e.target.value)} placeholder="0.00" className={inputCls} required />
-        </div>
-        <div>
-          <label className={labelCls}>Fee (USD)</label>
-          <input type="number" step="any" value={form.fee_usd} onChange={e => set('fee_usd', e.target.value)} placeholder="0.00" className={inputCls} />
-        </div>
-        <div>
-          <label className={labelCls}>Notes</label>
-          <input value={form.notes} onChange={e => set('notes', e.target.value)} placeholder="Optional" className={inputCls} />
-        </div>
       </div>
+
+      {isCash ? (
+        /* ── Cash-flow simplified form ── */
+        <>
+          <div className={`rounded px-3 py-2 text-xs border ${form.type === 'deposit' ? 'bg-green-500/10 border-green-500/20 text-green-400' : 'bg-red-500/10 border-red-500/20 text-red-400'}`}>
+            {form.type === 'deposit'
+              ? 'Record real money entering this portfolio from outside (bank, CEX withdrawal, etc.).'
+              : 'Record real money leaving this portfolio back to fiat or an external account.'}
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <div className="col-span-2 sm:col-span-1">
+              <label className={labelCls}>Amount (USD)</label>
+              <input type="number" step="any" value={form.qty} onChange={e => set('qty', e.target.value)} placeholder="0.00" className={inputCls} required />
+            </div>
+            <div className="col-span-2 sm:col-span-1">
+              <label className={labelCls}>Notes</label>
+              <input value={form.notes} onChange={e => set('notes', e.target.value)} placeholder="e.g. Binance withdrawal, salary DCA…" className={inputCls} />
+            </div>
+          </div>
+        </>
+      ) : (
+        /* ── Normal crypto transaction form ── */
+        <>
+          <div className="relative">
+            <label className={labelCls}>Asset</label>
+            <input
+              value={form._assetSearch}
+              onChange={e => set('_assetSearch', e.target.value)}
+              placeholder="Search symbol or name…"
+              className={inputCls}
+              autoComplete="off"
+            />
+            {assetResults.length > 0 && (
+              <div className="absolute z-20 w-full mt-1 bg-surface-2 border border-border rounded shadow-xl">
+                {assetResults.map(a => (
+                  <button key={a.id} type="button" onClick={() => selectAsset(a)}
+                    className="w-full text-left px-3 py-2 text-sm hover:bg-surface-3 flex items-center gap-2">
+                    <span className="font-semibold text-gray-100">{a.symbol}</span>
+                    <span className="text-gray-400">{a.name}</span>
+                  </button>
+                ))}
+              </div>
+            )}
+            {!form._assetId && form._assetSearch && (
+              <div className="mt-2 grid grid-cols-3 gap-2">
+                <div>
+                  <label className={labelCls}>CoinGecko ID</label>
+                  <input value={form._coingeckoId} onChange={e => set('_coingeckoId', e.target.value)} placeholder="bitcoin" className={inputCls} />
+                </div>
+                <div>
+                  <label className={labelCls}>Symbol</label>
+                  <input value={form._symbol} onChange={e => set('_symbol', e.target.value)} placeholder="BTC" className={inputCls} />
+                </div>
+                <div>
+                  <label className={labelCls}>Category</label>
+                  <select value={form._category} onChange={e => set('_category', e.target.value)} className={inputCls}>
+                    {CATEGORIES.map(c => <option key={c}>{c}</option>)}
+                  </select>
+                </div>
+              </div>
+            )}
+          </div>
+
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className={labelCls}>Quantity</label>
+              <input type="number" step="any" value={form.qty} onChange={e => set('qty', e.target.value)} placeholder="0.00" className={inputCls} required />
+            </div>
+            <div>
+              <label className={labelCls}>Price (USD)</label>
+              <input type="number" step="any" value={form.price_usd} onChange={e => set('price_usd', e.target.value)} placeholder="0.00" className={inputCls} required />
+            </div>
+            <div>
+              <label className={labelCls}>Fee (USD)</label>
+              <input type="number" step="any" value={form.fee_usd} onChange={e => set('fee_usd', e.target.value)} placeholder="0.00" className={inputCls} />
+            </div>
+            <div>
+              <label className={labelCls}>Notes</label>
+              <input value={form.notes} onChange={e => set('notes', e.target.value)} placeholder="Optional" className={inputCls} />
+            </div>
+          </div>
+        </>
+      )}
 
       {error && <p className="text-xs text-loss">{error}</p>}
 
@@ -241,11 +278,8 @@ export function TransactionForm({ portfolioId, initial, nlPrefill, onSave, onCan
         <button type="button" onClick={onCancel} className="px-4 py-1.5 text-sm text-gray-400 hover:text-gray-200 transition-colors">
           Cancel
         </button>
-        <button
-          type="submit"
-          disabled={saving}
-          className="px-4 py-1.5 text-sm bg-accent hover:bg-indigo-500 text-white rounded transition-colors disabled:opacity-50"
-        >
+        <button type="submit" disabled={saving}
+          className="px-4 py-1.5 text-sm bg-accent hover:bg-indigo-500 text-white rounded transition-colors disabled:opacity-50">
           {saving ? 'Saving…' : initial?.id ? 'Update' : 'Add'}
         </button>
       </div>

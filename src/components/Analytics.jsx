@@ -10,6 +10,7 @@ const STAKING_RX = /stak|yield|\bearn\b|validator|interest|bond/i
 function classifyTx(tx) {
   const notes = tx.notes ?? ''
   const price = Number(tx.price_usd)
+  if (tx.type === 'deposit' || tx.type === 'withdrawal') return null  // cash flows, not income
   if (tx.type === 'sell') return 'realized'
   if (tx.type === 'buy' || tx.type === 'transfer_out') return null
   if (tx.type === 'transfer_in' && price > 0) return null  // paid transfer = cost, not income
