@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react'
 import { computeAssetPnl } from '../utils/pnl'
-import { fmtUsd, fmtPct, fmtQty, pnlClass } from '../utils/format'
+import { fmtUsd, fmtPct, fmtQty, fmtDate, pnlClass } from '../utils/format'
 
 // ── Classification regexes ──────────────────────────────────────────────────
 const LP_RX      = /lps?\b|liquidity|pool|\bfee(s)?\b|\bdif\b/i
@@ -161,6 +161,40 @@ function computeMonthly(transactions, prices, numMonths) {
   return Object.values(months)
 }
 
+function computeDrillDown(transactions, prices, monthKey, catKey) {
+  const sorted = [...transactions].sort((a, b) => new Date(a.date) - new Date(b.date))
+  const state  = {}
+  const rows   = []
+
+  for (const tx of sorted) {
+    const d   = new Date(tx.date)
+    const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`
+    const aid = tx.asset_id
+    const qty = Number(tx.qty), price = Number(tx.price_usd), fee = Number(tx.fee_usd ?? 0)
+    if (!state[aid]) state[aid] = { qty: 0, cost: 0 }
+
+    // Always maintain running avg cost basis
+    if (tx.type === 'buy' || tx.type === 'transfer_in' || tx.type === 'earn') {
+      state[aid].cost += qty * price + fee
+      state[aid].qty  += qty
+    } else if (tx.type === 'sell' || tx.type === 'transfer_out') {
+      const avg = state[aid].qty > 0 ? state[aid].cost / state[aid].qty : 0
+      if (key === monthKey && catKey === 'realized' && tx.type === 'sell') {
+        rows.push({ tx, value: (price - avg) * qty - fee, avgCost: avg })
+      }
+      state[aid].cost = Math.max(0, state[aid].cost - avg * qty)
+      state[aid].qty  = Math.max(0, state[aid].qty - qty)
+      continue
+    }
+
+    if (key !== monthKey || catKey === 'realized') continue
+    const txCat = classifyTx(tx)
+    if (txCat === catKey) rows.push({ tx, value: txValue(tx, prices) })
+  }
+
+  return rows
+}
+
 function computeAirdropGroups(transactions, prices) {
   const airdropTxs = transactions.filter(tx => classifyTx(tx) === 'airdrop')
   if (!airdropTxs.length) return []
@@ -292,7 +326,7 @@ function DonutChart({ items }) {
   )
 }
 
-function MonthlyBarChart({ data }) {
+function MonthlyBarChart({ data, selectedCell, onSelect }) {
   const totals = data.map(m => CHART_CATS.reduce((s, c) => s + Math.max(0, m[c.key] ?? 0), 0))
   const maxVal = Math.max(...totals, 1)
   if (!totals.some(t => t > 0)) return (
@@ -304,7 +338,7 @@ function MonthlyBarChart({ data }) {
   const ticks = [0.25, 0.5, 0.75, 1].map(t => ({ y: pad.t + cH * (1 - t), v: fmtShort(maxVal * t) }))
 
   return (
-    <svg viewBox={`0 0 ${W} ${H}`} className="w-full h-auto">
+    <svg viewBox={`0 0 ${W} ${H}`} className="w-full h-auto" style={{ cursor: 'pointer' }}>
       {ticks.map(({ y, v }) => (
         <g key={v}>
           <line x1={pad.l} y1={y} x2={W - pad.r} y2={y} stroke="#1f2937" strokeDasharray="3,2" />
@@ -315,6 +349,7 @@ function MonthlyBarChart({ data }) {
       {data.map((m, i) => {
         const x = pad.l + i * (bw + gap)
         let y = pad.t + cH
+        const isMonthSelected = selectedCell?.monthKey === m.key
         return (
           <g key={m.key}>
             {CHART_CATS.map(cat => {
@@ -322,9 +357,26 @@ function MonthlyBarChart({ data }) {
               if (!val) return null
               const h = (val / maxVal) * cH
               y -= h
-              return <rect key={cat.key} x={x} y={y} width={bw} height={h} fill={cat.color} rx="1"><title>{cat.label}: {fmtUsd(val)}</title></rect>
+              const isSelected = isMonthSelected && selectedCell?.catKey === cat.key
+              const dimmed = selectedCell && !isSelected
+              return (
+                <rect
+                  key={cat.key}
+                  x={x} y={y} width={bw} height={h}
+                  fill={cat.color} rx="1"
+                  opacity={dimmed ? 0.3 : 1}
+                  stroke={isSelected ? '#fff' : 'none'}
+                  strokeWidth={isSelected ? 1 : 0}
+                  onClick={() => onSelect({ monthKey: m.key, catKey: cat.key })}
+                >
+                  <title>{cat.label}: {fmtUsd(val)} — click to inspect</title>
+                </rect>
+              )
             })}
-            <text x={x + bw / 2} y={H - 8} textAnchor="middle" fill="#4b5563" fontSize="8.5">{m.label}</text>
+            <text
+              x={x + bw / 2} y={H - 8} textAnchor="middle" fontSize="8.5"
+              fill={isMonthSelected ? '#e5e7eb' : '#4b5563'}
+            >{m.label}</text>
           </g>
         )
       })}
@@ -391,6 +443,7 @@ export function Analytics({ transactions, assets, prices, changes, marketData = 
   const [perfPeriod,   setPerfPeriod]   = useState('24H')
   const [incomeRange,  setIncomeRange]  = useState('ALL')
   const [monthlyRange, setMonthlyRange] = useState('1Y')
+  const [selectedCell, setSelectedCell] = useState(null)
 
   // Per-asset enriched rows
   const assetRows = useMemo(() => {
@@ -442,6 +495,11 @@ export function Analytics({ transactions, assets, prices, changes, marketData = 
   }, [monthlyRange, transactions])
 
   const monthly = useMemo(() => computeMonthly(transactions, prices, monthlyNumMonths), [transactions, prices, monthlyNumMonths])
+
+  const drillDown = useMemo(() => {
+    if (!selectedCell) return []
+    return computeDrillDown(transactions, prices, selectedCell.monthKey, selectedCell.catKey)
+  }, [selectedCell, transactions, prices])
 
   // Airdrops
   const airdropGroups = useMemo(() => computeAirdropGroups(transactions, prices), [transactions, prices])
@@ -586,7 +644,7 @@ export function Analytics({ transactions, assets, prices, changes, marketData = 
                 {MONTHLY_RANGES.map(r => (
                   <button
                     key={r.id}
-                    onClick={() => setMonthlyRange(r.id)}
+                    onClick={() => { setMonthlyRange(r.id); setSelectedCell(null) }}
                     className={`px-2 py-0.5 text-xs rounded transition-colors ${
                       monthlyRange === r.id
                         ? 'bg-accent/20 text-accent border border-accent/40'
@@ -603,7 +661,73 @@ export function Analytics({ transactions, assets, prices, changes, marketData = 
               ))}
             </div>
           </div>
-          <MonthlyBarChart data={monthly} />
+          <MonthlyBarChart
+            data={monthly}
+            selectedCell={selectedCell}
+            onSelect={cell => setSelectedCell(prev =>
+              prev?.monthKey === cell.monthKey && prev?.catKey === cell.catKey ? null : cell
+            )}
+          />
+
+          {/* Drill-down panel */}
+          {selectedCell && (() => {
+            const catDef    = CHART_CATS.find(c => c.key === selectedCell.catKey)
+            const monthDef  = monthly.find(m => m.key === selectedCell.monthKey)
+            const total     = drillDown.reduce((s, r) => s + r.value, 0)
+            const isRealized = selectedCell.catKey === 'realized'
+            return (
+              <div className="mt-3 border border-border rounded-lg overflow-hidden">
+                <div className="flex items-center justify-between px-4 py-2.5 bg-surface-2 border-b border-border">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <span className="w-2.5 h-2.5 rounded-sm flex-shrink-0" style={{ background: catDef?.color }} />
+                    <span className="text-xs font-semibold text-gray-200">
+                      {monthDef?.label} · {catDef?.label}
+                    </span>
+                    <span className="text-xs text-gray-500">
+                      {drillDown.length} tx · Total:
+                    </span>
+                    <span className={`text-xs font-semibold tabular-nums ${pnlClass(total)}`}>{fmtUsd(total)}</span>
+                  </div>
+                  <button onClick={() => setSelectedCell(null)} className="text-gray-600 hover:text-gray-300 transition-colors text-sm leading-none px-1">✕</button>
+                </div>
+
+                {drillDown.length === 0 ? (
+                  <div className="px-4 py-6 text-center text-xs text-gray-600">No transactions found for this period.</div>
+                ) : (
+                  <div className="overflow-x-auto max-h-72">
+                    <table className="w-full text-xs">
+                      <thead>
+                        <tr className="border-b border-border text-gray-600 uppercase tracking-wider">
+                          <th className="px-4 py-2 text-left">Date</th>
+                          <th className="px-4 py-2 text-left">Asset</th>
+                          <th className="px-4 py-2 text-right">Qty</th>
+                          <th className="px-4 py-2 text-right">Price</th>
+                          {isRealized && <th className="px-4 py-2 text-right">Avg Cost</th>}
+                          <th className="px-4 py-2 text-right">{isRealized ? 'Net Gain' : 'Value'}</th>
+                          <th className="px-4 py-2 text-left hidden sm:table-cell">Notes</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-border">
+                        {drillDown.map(({ tx, value, avgCost }) => (
+                          <tr key={tx.id} className={`hover:bg-surface-2 transition-colors ${value < 0 ? 'bg-red-500/5' : ''}`}>
+                            <td className="px-4 py-2 text-gray-400 whitespace-nowrap">{fmtDate(tx.date)}</td>
+                            <td className="px-4 py-2 font-medium text-gray-200">{tx.asset?.symbol ?? '?'}</td>
+                            <td className="px-4 py-2 text-right num text-gray-300">{fmtQty(Number(tx.qty))}</td>
+                            <td className="px-4 py-2 text-right num text-gray-300">{fmtUsd(Number(tx.price_usd))}</td>
+                            {isRealized && (
+                              <td className="px-4 py-2 text-right num text-gray-500">{avgCost != null ? fmtUsd(avgCost) : '—'}</td>
+                            )}
+                            <td className={`px-4 py-2 text-right num font-semibold ${pnlClass(value)}`}>{fmtUsd(value)}</td>
+                            <td className="px-4 py-2 text-gray-600 hidden sm:table-cell max-w-[160px] truncate">{tx.notes ?? '—'}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </div>
+            )
+          })()}
         </div>
       </section>
 
