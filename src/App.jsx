@@ -15,7 +15,7 @@ import { supabase } from './lib/supabase'
 import { lookupCoinGeckoId } from './lib/priceService'
 
 const TABS = [
-  { id: 'Dashboard',    label: 'Dashboard',   short: 'Home',   icon: IconDashboard },
+  { id: 'Dashboard',    label: 'Portfolio Summary', short: 'Summary', icon: IconDashboard },
   { id: 'Holdings',     label: 'Holdings',    short: 'Assets', icon: IconHoldings },
   { id: 'Analytics',   label: 'Analytics',   short: 'Stats',  icon: IconAnalytics },
   { id: 'Transactions', label: 'Transactions',short: 'Txs',    icon: IconTxs },
@@ -303,6 +303,7 @@ export default function App() {
       {/* Data Audit modal */}
       {auditOpen && (
         <DataAudit
+          portfolioId={portfolioId}
           transactions={transactions}
           assets={assets}
           onBatchDelete={batchDelete}

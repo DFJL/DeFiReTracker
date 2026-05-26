@@ -201,14 +201,8 @@ const TYPE_LABEL = {
   large_outlier:'Large outlier',
 }
 
-function FindingRow({ finding, onApply, onSkip, applying, skipped }) {
+function FindingRow({ finding, onApply, onSkip, applying }) {
   const sty = SEVERITY_STYLE[finding.severity]
-  if (skipped) return (
-    <div className="flex items-center gap-3 px-4 py-2.5 opacity-40">
-      <span className="text-xs text-gray-600 italic flex-1">Skipped: {finding.title}</span>
-      <button onClick={onSkip} className="text-xs text-gray-600 hover:text-gray-400">Undo</button>
-    </div>
-  )
   return (
     <div className="px-4 py-3 space-y-2">
       <div className="flex items-start gap-2">
@@ -256,17 +250,36 @@ function FindingRow({ finding, onApply, onSkip, applying, skipped }) {
   )
 }
 
-export function DataAudit({ transactions, assets, onBatchDelete, onUpsert, onClose }) {
+export function DataAudit({ transactions, assets, onBatchDelete, onUpsert, onClose, portfolioId }) {
+  const storageKey = `audit-dismissed-${portfolioId ?? 'global'}`
+
   const [applying,   setApplying]   = useState(new Set())
-  const [skipped,    setSkipped]    = useState(new Set())
+  const [dismissed,  setDismissed]  = useState(() => {
+    try { const s = localStorage.getItem(storageKey); return s ? new Set(JSON.parse(s)) : new Set() }
+    catch { return new Set() }
+  })
   const [fixingDups, setFixingDups] = useState(false)
 
-  const findings = useMemo(() => runAudit(transactions, assets), [transactions, assets])
+  const allFindings = useMemo(() => runAudit(transactions, assets), [transactions, assets])
+  const findings    = useMemo(() => allFindings.filter(f => !dismissed.has(f.id)), [allFindings, dismissed])
+  const hiddenCount = allFindings.length - findings.length
 
-  const errors   = findings.filter(f => f.severity === 'error')
-  const warnings = findings.filter(f => f.severity === 'warning')
+  const errors      = findings.filter(f => f.severity === 'error')
+  const warnings    = findings.filter(f => f.severity === 'warning')
   const dupFindings = findings.filter(f => f.type === 'duplicate')
-  const activeCount = findings.filter(f => !skipped.has(f.id)).length
+
+  function persistDismiss(id) {
+    setDismissed(prev => {
+      const next = new Set(prev); next.add(id)
+      try { localStorage.setItem(storageKey, JSON.stringify([...next])) } catch {}
+      return next
+    })
+  }
+
+  function resetDismissed() {
+    setDismissed(new Set())
+    try { localStorage.removeItem(storageKey) } catch {}
+  }
 
   async function applyFix(finding) {
     setApplying(s => new Set(s).add(finding.id))
@@ -276,6 +289,7 @@ export function DataAudit({ transactions, assets, onBatchDelete, onUpsert, onClo
       } else {
         await onUpsert(finding.fix.transaction)
       }
+      persistDismiss(finding.id)
     } finally {
       setApplying(s => { const n = new Set(s); n.delete(finding.id); return n })
     }
@@ -283,18 +297,12 @@ export function DataAudit({ transactions, assets, onBatchDelete, onUpsert, onClo
 
   async function fixAllDuplicates() {
     setFixingDups(true)
-    const active = dupFindings.filter(f => !skipped.has(f.id))
-    const ids = active.flatMap(f => f.fix.ids)
-    if (ids.length) await onBatchDelete(ids)
+    const ids = dupFindings.flatMap(f => f.fix.ids)
+    if (ids.length) {
+      await onBatchDelete(ids)
+      dupFindings.forEach(f => persistDismiss(f.id))
+    }
     setFixingDups(false)
-  }
-
-  function toggleSkip(id) {
-    setSkipped(s => {
-      const n = new Set(s)
-      n.has(id) ? n.delete(id) : n.add(id)
-      return n
-    })
   }
 
   const sections = [
@@ -329,10 +337,10 @@ export function DataAudit({ transactions, assets, onBatchDelete, onUpsert, onClo
         </div>
 
         {/* Quick actions */}
-        {dupFindings.filter(f => !skipped.has(f.id)).length > 0 && (
+        {dupFindings.length > 0 && (
           <div className="px-5 py-3 border-b border-border bg-red-500/5 flex items-center justify-between gap-3">
             <p className="text-xs text-red-300">
-              {dupFindings.filter(f => !skipped.has(f.id)).length} duplicate group{dupFindings.filter(f => !skipped.has(f.id)).length > 1 ? 's' : ''} found — will delete {dupFindings.filter(f => !skipped.has(f.id)).flatMap(f => f.fix.ids).length} extra rows.
+              {dupFindings.length} duplicate group{dupFindings.length > 1 ? 's' : ''} found — will delete {dupFindings.flatMap(f => f.fix.ids).length} extra rows.
             </p>
             <button
               onClick={fixAllDuplicates}
@@ -364,9 +372,8 @@ export function DataAudit({ transactions, assets, onBatchDelete, onUpsert, onClo
                     key={f.id}
                     finding={f}
                     applying={applying.has(f.id)}
-                    skipped={skipped.has(f.id)}
                     onApply={() => applyFix(f)}
-                    onSkip={() => toggleSkip(f.id)}
+                    onSkip={() => persistDismiss(f.id)}
                   />
                 ))}
               </div>
@@ -376,7 +383,12 @@ export function DataAudit({ transactions, assets, onBatchDelete, onUpsert, onClo
 
         {/* Footer */}
         <div className="px-5 py-3 border-t border-border flex items-center justify-between text-xs text-gray-600">
-          <span>{activeCount} issue{activeCount !== 1 ? 's' : ''} remaining · {skipped.size} skipped</span>
+          <span>
+            {findings.length} issue{findings.length !== 1 ? 's' : ''} remaining
+            {hiddenCount > 0 && (
+              <> · <button onClick={resetDismissed} className="text-gray-500 hover:text-gray-300 underline underline-offset-2 transition-colors">{hiddenCount} hidden — reset</button></>
+            )}
+          </span>
           <button onClick={onClose} className="text-gray-500 hover:text-gray-300 transition-colors">
             Close
           </button>
