@@ -69,14 +69,17 @@ export function Dashboard({ transactions, assets, prices, changes, pmktSummary }
     return best
   }, [assetRows, changes, assetChanges, topPerfPeriod])
 
-  const combinedTotal = totalValue + (pmktSummary?.value ?? 0)
-  const combinedInvested = totalInvested + (pmktSummary?.invested ?? 0)
+  const combinedTotal        = totalValue + (pmktSummary?.value ?? 0)
+  const combinedInvested     = totalInvested + (pmktSummary?.invested ?? 0)
+  const combinedGrossInvested = totalGrossInvested + (pmktSummary?.invested ?? 0)
+  const totalPnl             = totalUnrealized + totalRealized
+  const roi                  = combinedGrossInvested > 0 ? (totalPnl / combinedGrossInvested) * 100 : null
 
   // Portfolio data for AI analyzer
   const portfolioData = useMemo(() => ({
     totalValue: combinedTotal,
-    totalInvested: combinedInvested,
-    totalPnl: totalUnrealized + totalRealized,
+    totalInvested: combinedGrossInvested,
+    totalPnl,
     unrealizedPnl: totalUnrealized,
     realizedPnl: totalRealized,
     change24hUsd,
@@ -154,8 +157,18 @@ export function Dashboard({ transactions, assets, prices, changes, pmktSummary }
       </div>
 
       {/* Secondary stats */}
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 md:gap-3">
-        <StatBox label="Cost Basis (held)" value={fmtUsd(combinedInvested)} sub="current positions" />
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 md:gap-3">
+        <StatBox
+          label="Total Invested"
+          value={fmtUsd(combinedGrossInvested)}
+          sub={`${fmtUsd(combinedInvested)} still held`}
+        />
+        <StatBox
+          label="Portfolio ROI"
+          value={roi != null ? fmtPct(roi) : '—'}
+          sub={roi != null ? fmtUsd(totalPnl) : undefined}
+          valueClass={roi != null ? pnlClass(roi) : ''}
+        />
         <StatBox
           label="Unrealized PnL"
           value={fmtUsd(totalUnrealized)}

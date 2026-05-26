@@ -720,7 +720,7 @@ export function Analytics({ transactions, assets, prices, changes, marketData = 
                           <th className="px-4 py-2 text-right">Price</th>
                           {isRealized && <th className="px-4 py-2 text-right">Avg Cost</th>}
                           <th className="px-4 py-2 text-right">{isRealized ? 'Net Gain' : 'Value'}</th>
-                          <th className="px-4 py-2 text-left hidden sm:table-cell">Notes</th>
+                          <th className="px-4 py-2 text-left">Notes</th>
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-border">
@@ -734,7 +734,7 @@ export function Analytics({ transactions, assets, prices, changes, marketData = 
                               <td className="px-4 py-2 text-right num text-gray-500">{avgCost != null ? fmtUsd(avgCost) : '—'}</td>
                             )}
                             <td className={`px-4 py-2 text-right num font-semibold ${pnlClass(value)}`}>{fmtUsd(value)}</td>
-                            <td className="px-4 py-2 text-gray-600 hidden sm:table-cell max-w-[160px] truncate">{tx.notes ?? '—'}</td>
+                            <td className="px-4 py-2 text-gray-600 max-w-[180px] truncate" title={tx.notes ?? ''}>{tx.notes ?? '—'}</td>
                           </tr>
                         ))}
                       </tbody>
