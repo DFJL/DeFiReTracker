@@ -352,9 +352,11 @@ export function NLTransactionModal({ portfolioId, onParsedSingle, onBulkSave, on
           value={text}
           onChange={e => setText(e.target.value)}
           onKeyDown={e => e.key === 'Enter' && e.metaKey && handleParse()}
-          placeholder={image ? 'Optional: add context (exchange name, date range…)' : 'e.g. Bought 2 SOL at $180 on May 1st, paid $2 fee'}
-          rows={image ? 2 : 3}
-          className="w-full bg-surface-2 border border-border text-gray-200 text-sm rounded px-3 py-2 focus:outline-none focus:border-accent placeholder-gray-600 resize-none"
+          placeholder={image
+            ? 'Optional: add context (exchange name, date range…)'
+            : 'Paste transaction history (CoinGecko, Binance, etc.) or describe in plain language…'}
+          rows={image ? 2 : 10}
+          className="w-full bg-surface-2 border border-border text-gray-200 text-sm rounded px-3 py-2 focus:outline-none focus:border-accent placeholder-gray-600 resize-y font-mono text-xs leading-relaxed"
           autoFocus={!image}
         />
       </div>
