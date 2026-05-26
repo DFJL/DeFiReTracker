@@ -69,16 +69,20 @@ export function Dashboard({ transactions, assets, prices, changes, pmktSummary }
     return best
   }, [assetRows, changes, assetChanges, topPerfPeriod])
 
-  const combinedTotal        = totalValue + (pmktSummary?.value ?? 0)
-  const combinedInvested     = totalInvested + (pmktSummary?.invested ?? 0)
-  const combinedGrossInvested = totalGrossInvested + (pmktSummary?.invested ?? 0)
-  const totalPnl             = totalUnrealized + totalRealized
-  const roi                  = combinedGrossInvested > 0 ? (totalPnl / combinedGrossInvested) * 100 : null
+  const combinedTotal         = totalValue + (pmktSummary?.value ?? 0)
+  const combinedInvested      = totalInvested + (pmktSummary?.invested ?? 0)
+  // Net external cash in = cost basis of held positions minus realized gains already extracted.
+  // This removes recycled capital (sell proceeds reinvested) from the invested figure.
+  const netCashIn             = combinedInvested - totalRealized
+  const totalPnl              = totalUnrealized + totalRealized
+  // ROI denominator: if netCashIn <= 0 the user has already extracted their initial capital (house money)
+  const roi                   = netCashIn > 0 ? (totalPnl / netCashIn) * 100 : null
+  const houseMoneyMode        = netCashIn <= 0 && totalRealized > 0
 
   // Portfolio data for AI analyzer
   const portfolioData = useMemo(() => ({
     totalValue: combinedTotal,
-    totalInvested: combinedGrossInvested,
+    totalInvested: Math.max(0, netCashIn),
     totalPnl,
     unrealizedPnl: totalUnrealized,
     realizedPnl: totalRealized,
@@ -158,17 +162,29 @@ export function Dashboard({ transactions, assets, prices, changes, pmktSummary }
 
       {/* Secondary stats */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 md:gap-3">
-        <StatBox
-          label="Total Invested"
-          value={fmtUsd(combinedGrossInvested)}
-          sub={`${fmtUsd(combinedInvested)} still held`}
-        />
-        <StatBox
-          label="Portfolio ROI"
-          value={roi != null ? fmtPct(roi) : '—'}
-          sub={roi != null ? fmtUsd(totalPnl) : undefined}
-          valueClass={roi != null ? pnlClass(roi) : ''}
-        />
+        <div className="bg-surface-1 border border-border rounded-lg px-4 py-3">
+          <p className="text-xs text-gray-500 mb-0.5">Net Invested</p>
+          <p className="text-xl font-semibold num leading-tight">{fmtUsd(Math.max(0, netCashIn))}</p>
+          <p className="text-xs mt-0.5 text-gray-600" title="Cost basis of held positions minus realized gains extracted. Removes recycled capital from the figure.">
+            {houseMoneyMode ? 'House money — initial capital recouped' : `${fmtUsd(combinedInvested)} held at cost`}
+          </p>
+        </div>
+        <div className="bg-surface-1 border border-border rounded-lg px-4 py-3">
+          <p className="text-xs text-gray-500 mb-0.5">Portfolio ROI</p>
+          {houseMoneyMode ? (
+            <>
+              <p className="text-xl font-semibold num leading-tight text-green-400">House $</p>
+              <p className="text-xs mt-0.5 text-gray-600">Initial capital fully recouped</p>
+            </>
+          ) : (
+            <>
+              <p className={`text-xl font-semibold num leading-tight ${roi != null ? pnlClass(roi) : ''}`}>
+                {roi != null ? fmtPct(roi) : '—'}
+              </p>
+              <p className={`text-xs mt-0.5 num ${pnlClass(totalPnl)}`}>{fmtUsd(totalPnl)} total P&amp;L</p>
+            </>
+          )}
+        </div>
         <StatBox
           label="Unrealized PnL"
           value={fmtUsd(totalUnrealized)}
