@@ -4,7 +4,6 @@ import { fmtUsd, fmtPct, pnlClass } from '../utils/format'
 
 function addrKey(portfolioId)        { return `pmkt_addresses_${portfolioId ?? 'global'}` }
 function consolidateKey(portfolioId)  { return `pmkt_consolidate_${portfolioId ?? 'global'}` }
-function pusdKey(portfolioId)         { return `pmkt_pusd_${portfolioId ?? 'global'}` }
 
 function AddressTag({ address, onRemove }) {
   const short = `${address.slice(0, 6)}…${address.slice(-4)}`
@@ -16,37 +15,31 @@ function AddressTag({ address, onRemove }) {
   )
 }
 
-export function PolymarketTracker({ portfolioId, portfolioName, onSummaryChange, pmktCostBasis }) {
+export function PolymarketTracker({ portfolioId, portfolioName, onSummaryChange }) {
   const [addresses, setAddresses] = useState(() => {
     try { return JSON.parse(localStorage.getItem(addrKey(portfolioId)) ?? '[]') } catch { return [] }
   })
-  const [input, setInput]       = useState('')
+  const [input, setInput]         = useState('')
   const [positions, setPositions] = useState([])
-  const [cashBalance, setCashBalance] = useState(0)
+  const [cashBalance, setCashBalance] = useState(null)
+  const [netDeposited, setNetDeposited] = useState(null)
   const [proxyWallets, setProxyWallets] = useState([])
-  const [explorer, setExplorer] = useState({})
-  const [loading, setLoading]   = useState(false)
-  const [error, setError]       = useState(null)
+  const [loading, setLoading]     = useState(false)
+  const [error, setError]         = useState(null)
   const [consolidate, setConsolidate] = useState(
     () => localStorage.getItem(consolidateKey(portfolioId)) === 'true'
   )
-  const [pusdInput, setPusdInput] = useState(
-    () => localStorage.getItem(pusdKey(portfolioId)) ?? ''
-  )
   const [showDebug, setShowDebug] = useState(false)
-
-  const manualPusd = parseFloat(pusdInput) || 0
 
   // Reload addresses and consolidate flag when portfolio changes
   useEffect(() => {
     try { setAddresses(JSON.parse(localStorage.getItem(addrKey(portfolioId)) ?? '[]')) }
     catch { setAddresses([]) }
     setConsolidate(localStorage.getItem(consolidateKey(portfolioId)) === 'true')
-    setPusdInput(localStorage.getItem(pusdKey(portfolioId)) ?? '')
     setPositions([])
-    setCashBalance(0)
+    setCashBalance(null)
+    setNetDeposited(null)
     setProxyWallets([])
-    setExplorer({})
     setError(null)
   }, [portfolioId])
 
@@ -72,15 +65,21 @@ export function PolymarketTracker({ portfolioId, portfolioName, onSummaryChange,
   }
 
   useEffect(() => {
-    if (!addresses.length) { setPositions([]); setCashBalance(0); return }
+    if (!addresses.length) {
+      setPositions([])
+      setCashBalance(null)
+      setNetDeposited(null)
+      return
+    }
     setLoading(true); setError(null)
     Promise.all(addresses.map(fetchPolymarketPositions))
       .then(results => {
         setPositions(results.flatMap(r => r.positions))
-        setCashBalance(results.reduce((s, r) => s + r.cashBalance, 0))
+        const totalCash = results.reduce((s, r) => s + r.cashBalance, 0)
+        const totalDeposited = results.reduce((s, r) => s + r.netDeposited, 0)
+        setCashBalance(totalCash)
+        setNetDeposited(totalDeposited > 0 ? totalDeposited : null)
         setProxyWallets(results.map(r => r.proxyWallet).filter(Boolean))
-        // Merge explorer results from all addresses for debug
-        setExplorer(results.reduce((acc, r) => ({ ...acc, ...(r._explorer ?? {}) }), {}))
       })
       .catch(e => setError(e.message))
       .finally(() => setLoading(false))
@@ -90,19 +89,18 @@ export function PolymarketTracker({ portfolioId, portfolioName, onSummaryChange,
   const open = positions.filter(p => Number(p.size ?? 0) > 0 && !p.redeemed)
 
   const positionsValue = open.reduce((s, p) => s + Number(p.currentValue ?? (Number(p.size) * Number(p.currentPrice ?? p.price ?? 0))), 0)
-  const totalValue     = positionsValue + manualPusd
-  // Use portfolio PMKT cost basis (actual deposits) when available;
-  // fall back to summing position initialValues (which inflates due to reinvested winnings)
-  const totalInvested  = pmktCostBasis ?? open.reduce((s, p) => s + Number(p.initialValue ?? (Number(p.size) * Number(p.avgPrice ?? 0))), 0)
-  const totalPnl       = totalValue - totalInvested
+  const pusd           = cashBalance ?? 0
+  const totalValue     = positionsValue + pusd
+  const totalInvested  = netDeposited  // null if API didn't return it
+  const totalPnl       = totalInvested != null ? totalValue - totalInvested : null
 
   // Notify parent so Dashboard can consolidate
   useEffect(() => {
-    onSummaryChange?.(consolidate && (open.length > 0 || cashBalance > 0)
-      ? { value: totalValue, invested: totalInvested }
+    onSummaryChange?.(consolidate && (open.length > 0 || pusd > 0)
+      ? { value: totalValue, invested: totalInvested ?? totalValue }
       : null
     )
-  }, [consolidate, totalValue, totalInvested, open.length, cashBalance])
+  }, [consolidate, totalValue, totalInvested, open.length, pusd])
 
   return (
     <div className="space-y-4">
@@ -147,22 +145,6 @@ export function PolymarketTracker({ portfolioId, portfolioName, onSummaryChange,
             Add
           </button>
         </div>
-
-        {/* PUSD balance — not accessible via public API, entered manually */}
-        <div className="flex items-center gap-2 mt-3 pt-3 border-t border-border">
-          <label className="text-xs text-gray-500 whitespace-nowrap">PUSD balance</label>
-          <input
-            type="number" min="0" step="0.01"
-            value={pusdInput}
-            onChange={e => {
-              setPusdInput(e.target.value)
-              localStorage.setItem(pusdKey(portfolioId), e.target.value)
-            }}
-            placeholder="0.00"
-            className="w-32 bg-surface border border-border rounded px-2 py-1 text-sm text-gray-200 placeholder-gray-600 focus:outline-none focus:border-accent"
-          />
-          <span className="text-xs text-gray-600">from Polymarket → Portfolio</span>
-        </div>
       </div>
 
       {loading && <div className="text-center py-8 text-gray-500 text-sm">Fetching positions…</div>}
@@ -178,19 +160,28 @@ export function PolymarketTracker({ portfolioId, portfolioName, onSummaryChange,
             <div className="bg-surface-1 border border-border rounded-lg px-4 py-3">
               <p className="text-xs text-gray-500 mb-0.5">Current Value</p>
               <p className="text-xl font-semibold num">{fmtUsd(totalValue)}</p>
-              {manualPusd > 0 && (
+              {pusd > 0 && (
                 <p className="text-xs text-gray-500 mt-0.5">
-                  {fmtUsd(positionsValue)} positions · {fmtUsd(manualPusd)} PUSD
+                  {fmtUsd(positionsValue)} positions · {fmtUsd(pusd)} PUSD
                 </p>
               )}
             </div>
             <div className="bg-surface-1 border border-border rounded-lg px-4 py-3">
               <p className="text-xs text-gray-500 mb-0.5">Invested</p>
-              <p className="text-xl font-semibold num">{fmtUsd(totalInvested)}</p>
+              <p className="text-xl font-semibold num">
+                {totalInvested != null ? fmtUsd(totalInvested) : <span className="text-gray-600 text-base">—</span>}
+              </p>
+              {totalInvested == null && (
+                <p className="text-xs text-gray-600 mt-0.5">Not available from API</p>
+              )}
             </div>
             <div className="bg-surface-1 border border-border rounded-lg px-4 py-3">
               <p className="text-xs text-gray-500 mb-0.5">Total PnL</p>
-              <p className={`text-xl font-semibold num ${pnlClass(totalPnl)}`}>{fmtUsd(totalPnl)}</p>
+              {totalPnl != null ? (
+                <p className={`text-xl font-semibold num ${pnlClass(totalPnl)}`}>{fmtUsd(totalPnl)}</p>
+              ) : (
+                <p className="text-xl font-semibold num text-gray-600">—</p>
+              )}
             </div>
           </div>
 
@@ -207,9 +198,8 @@ export function PolymarketTracker({ portfolioId, portfolioName, onSummaryChange,
                 <pre className="mt-2 text-xs text-gray-400 overflow-x-auto max-h-64 leading-relaxed">
                   {JSON.stringify({
                     cashBalance,
-                    pmktCostBasis,
+                    netDeposited,
                     proxyWallets,
-                    _explorer: explorer,
                     sample: positions.slice(0, 3).map(p => ({
                       size: p.size, avgPrice: p.avgPrice, currentPrice: p.currentPrice ?? p.price,
                       initialValue: p.initialValue, currentValue: p.currentValue,
