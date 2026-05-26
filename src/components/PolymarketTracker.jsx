@@ -2,12 +2,9 @@ import { useState, useEffect } from 'react'
 import { fetchPolymarketPositions } from '../lib/polymarketService'
 import { fmtUsd, fmtPct, pnlClass } from '../utils/format'
 
-function addrKey(portfolioId) {
-  return `pmkt_addresses_${portfolioId ?? 'global'}`
-}
-function consolidateKey(portfolioId) {
-  return `pmkt_consolidate_${portfolioId ?? 'global'}`
-}
+function addrKey(portfolioId)        { return `pmkt_addresses_${portfolioId ?? 'global'}` }
+function consolidateKey(portfolioId)  { return `pmkt_consolidate_${portfolioId ?? 'global'}` }
+function pusdKey(portfolioId)         { return `pmkt_pusd_${portfolioId ?? 'global'}` }
 
 function AddressTag({ address, onRemove }) {
   const short = `${address.slice(0, 6)}…${address.slice(-4)}`
@@ -32,13 +29,19 @@ export function PolymarketTracker({ portfolioId, portfolioName, onSummaryChange,
   const [consolidate, setConsolidate] = useState(
     () => localStorage.getItem(consolidateKey(portfolioId)) === 'true'
   )
+  const [pusdInput, setPusdInput] = useState(
+    () => localStorage.getItem(pusdKey(portfolioId)) ?? ''
+  )
   const [showDebug, setShowDebug] = useState(false)
+
+  const manualPusd = parseFloat(pusdInput) || 0
 
   // Reload addresses and consolidate flag when portfolio changes
   useEffect(() => {
     try { setAddresses(JSON.parse(localStorage.getItem(addrKey(portfolioId)) ?? '[]')) }
     catch { setAddresses([]) }
     setConsolidate(localStorage.getItem(consolidateKey(portfolioId)) === 'true')
+    setPusdInput(localStorage.getItem(pusdKey(portfolioId)) ?? '')
     setPositions([])
     setCashBalance(0)
     setProxyWallets([])
@@ -83,7 +86,7 @@ export function PolymarketTracker({ portfolioId, portfolioName, onSummaryChange,
   const open = positions.filter(p => Number(p.size ?? 0) > 0 && !p.redeemed)
 
   const positionsValue = open.reduce((s, p) => s + Number(p.currentValue ?? (Number(p.size) * Number(p.currentPrice ?? p.price ?? 0))), 0)
-  const totalValue     = positionsValue + cashBalance
+  const totalValue     = positionsValue + manualPusd
   // Use portfolio PMKT cost basis (actual deposits) when available;
   // fall back to summing position initialValues (which inflates due to reinvested winnings)
   const totalInvested  = pmktCostBasis ?? open.reduce((s, p) => s + Number(p.initialValue ?? (Number(p.size) * Number(p.avgPrice ?? 0))), 0)
@@ -140,6 +143,22 @@ export function PolymarketTracker({ portfolioId, portfolioName, onSummaryChange,
             Add
           </button>
         </div>
+
+        {/* PUSD balance — not accessible via public API, entered manually */}
+        <div className="flex items-center gap-2 mt-3 pt-3 border-t border-border">
+          <label className="text-xs text-gray-500 whitespace-nowrap">PUSD balance</label>
+          <input
+            type="number" min="0" step="0.01"
+            value={pusdInput}
+            onChange={e => {
+              setPusdInput(e.target.value)
+              localStorage.setItem(pusdKey(portfolioId), e.target.value)
+            }}
+            placeholder="0.00"
+            className="w-32 bg-surface border border-border rounded px-2 py-1 text-sm text-gray-200 placeholder-gray-600 focus:outline-none focus:border-accent"
+          />
+          <span className="text-xs text-gray-600">from Polymarket → Portfolio</span>
+        </div>
       </div>
 
       {loading && <div className="text-center py-8 text-gray-500 text-sm">Fetching positions…</div>}
@@ -155,9 +174,9 @@ export function PolymarketTracker({ portfolioId, portfolioName, onSummaryChange,
             <div className="bg-surface-1 border border-border rounded-lg px-4 py-3">
               <p className="text-xs text-gray-500 mb-0.5">Current Value</p>
               <p className="text-xl font-semibold num">{fmtUsd(totalValue)}</p>
-              {cashBalance > 0 && (
+              {manualPusd > 0 && (
                 <p className="text-xs text-gray-500 mt-0.5">
-                  {fmtUsd(positionsValue)} positions · {fmtUsd(cashBalance)} PUSD
+                  {fmtUsd(positionsValue)} positions · {fmtUsd(manualPusd)} PUSD
                 </p>
               )}
             </div>
