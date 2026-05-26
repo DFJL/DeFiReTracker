@@ -9,6 +9,7 @@ export function usePrices(coingeckoIds) {
   const [marketData, setMarketData] = useState({})
   const [lastUpdated, setLastUpdated] = useState(null)
   const [loading, setLoading]       = useState(false)
+  const [stale, setStale]           = useState(false)
   const timerRef = useRef(null)
 
   async function refresh(force = false) {
@@ -17,10 +18,17 @@ export function usePrices(coingeckoIds) {
     setLoading(true)
     try {
       const { prices: p, changes: c, marketData: md } = await fetchPrices(coingeckoIds)
-      setPrices(p)
-      setChanges(c)
-      setMarketData(md)
+      // Only update state if we got at least some prices back
+      if (Object.keys(p).length > 0 || Object.keys(prices).length === 0) {
+        setPrices(p)
+        setChanges(c)
+        setMarketData(md)
+      }
       setLastUpdated(new Date())
+      setStale(false)
+    } catch {
+      // fetchPrices now handles errors internally, but just in case: preserve existing state
+      setStale(true)
     } finally {
       setLoading(false)
     }
@@ -32,5 +40,5 @@ export function usePrices(coingeckoIds) {
     return () => clearInterval(timerRef.current)
   }, [JSON.stringify(coingeckoIds.slice().sort())])
 
-  return { prices, changes, marketData, lastUpdated, loading, refresh: () => refresh(true) }
+  return { prices, changes, marketData, lastUpdated, loading, stale, refresh: () => refresh(true) }
 }
