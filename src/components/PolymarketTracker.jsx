@@ -24,6 +24,7 @@ export function PolymarketTracker({ portfolioId, portfolioName, onSummaryChange 
   const [cashBalance, setCashBalance] = useState(null)
   const [netDeposited, setNetDeposited] = useState(null)
   const [proxyWallets, setProxyWallets] = useState([])
+  const [apiDebug, setApiDebug]   = useState([])
   const [loading, setLoading]     = useState(false)
   const [error, setError]         = useState(null)
   const [consolidate, setConsolidate] = useState(
@@ -40,6 +41,7 @@ export function PolymarketTracker({ portfolioId, portfolioName, onSummaryChange 
     setCashBalance(null)
     setNetDeposited(null)
     setProxyWallets([])
+    setApiDebug([])
     setError(null)
   }, [portfolioId])
 
@@ -69,6 +71,7 @@ export function PolymarketTracker({ portfolioId, portfolioName, onSummaryChange 
       setPositions([])
       setCashBalance(null)
       setNetDeposited(null)
+      setApiDebug([])
       return
     }
     setLoading(true); setError(null)
@@ -80,6 +83,7 @@ export function PolymarketTracker({ portfolioId, portfolioName, onSummaryChange 
         setCashBalance(totalCash)
         setNetDeposited(totalDeposited > 0 ? totalDeposited : null)
         setProxyWallets(results.map(r => r.proxyWallet).filter(Boolean))
+        setApiDebug(results.flatMap(r => r._debug ?? []))
       })
       .catch(e => setError(e.message))
       .finally(() => setLoading(false))
@@ -186,31 +190,30 @@ export function PolymarketTracker({ portfolioId, portfolioName, onSummaryChange 
           </div>
 
           {/* Debug panel */}
-          {positions.length > 0 && (
-            <div className="bg-surface-1 border border-border rounded-lg p-3">
-              <button
-                onClick={() => setShowDebug(v => !v)}
-                className="text-xs text-gray-500 hover:text-gray-300 transition-colors"
-              >
-                {showDebug ? '▾' : '▸'} Debug — raw API fields ({positions.length} positions, {open.length} open)
-              </button>
-              {showDebug && (
-                <pre className="mt-2 text-xs text-gray-400 overflow-x-auto max-h-64 leading-relaxed">
-                  {JSON.stringify({
-                    cashBalance,
-                    netDeposited,
-                    proxyWallets,
-                    sample: positions.slice(0, 3).map(p => ({
-                      size: p.size, avgPrice: p.avgPrice, currentPrice: p.currentPrice ?? p.price,
-                      initialValue: p.initialValue, currentValue: p.currentValue,
-                      redeemed: p.redeemed, closed: p.closed, outcome: p.outcome,
-                      title: (p.title ?? p.question ?? '').slice(0, 50),
-                    })),
-                  }, null, 2)}
-                </pre>
-              )}
-            </div>
-          )}
+          <div className="bg-surface-1 border border-border rounded-lg p-3">
+            <button
+              onClick={() => setShowDebug(v => !v)}
+              className="text-xs text-gray-500 hover:text-gray-300 transition-colors"
+            >
+              {showDebug ? '▾' : '▸'} Debug ({positions.length} positions, {open.length} open)
+            </button>
+            {showDebug && (
+              <pre className="mt-2 text-xs text-gray-400 overflow-x-auto max-h-96 leading-relaxed">
+                {JSON.stringify({
+                  cashBalance,
+                  netDeposited,
+                  proxyWallets,
+                  apiProbes: apiDebug,
+                  sample: positions.slice(0, 3).map(p => ({
+                    size: p.size, avgPrice: p.avgPrice, currentPrice: p.currentPrice ?? p.price,
+                    initialValue: p.initialValue, currentValue: p.currentValue,
+                    redeemed: p.redeemed, closed: p.closed, outcome: p.outcome,
+                    title: (p.title ?? p.question ?? '').slice(0, 50),
+                  })),
+                }, null, 2)}
+              </pre>
+            )}
+          </div>
 
           {open.length === 0 ? (
             <div className="bg-surface-1 border border-border rounded-lg p-8 text-center text-gray-500 text-sm">
