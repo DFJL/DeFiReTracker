@@ -304,18 +304,21 @@ export function NLTransactionModal({ portfolioId, onParsedSingle, onBulkSave, on
       const uniqueSymbols = [...new Set(
         selectedTxs.map(tx => (tx.symbol ?? '').toUpperCase()).filter(Boolean)
       )]
-      const { data: existingAssets } = await supabase
+      if (!uniqueSymbols.length) throw new Error('No valid symbols in selected transactions.')
+
+      const { data: existingAssets, error: lookupErr } = await supabase
         .from('assets').select('id, symbol').in('symbol', uniqueSymbols)
+      if (lookupErr) throw new Error(`Asset lookup failed: ${lookupErr.message}`)
       const assetMap = new Map((existingAssets ?? []).map(a => [a.symbol.toUpperCase(), a.id]))
 
-      // Step 2: create any missing assets (usually none for CoinGecko pastes)
+      // Step 2: create any missing assets
       const missing = uniqueSymbols.filter(s => !assetMap.has(s))
       if (missing.length) {
         setSaveStatus({ label: `Creating ${missing.length} new asset${missing.length > 1 ? 's' : ''}…`, pct: 30 })
         for (const sym of missing) {
           const txForSym = selectedTxs.find(tx => (tx.symbol ?? '').toUpperCase() === sym)
           const name = txForSym?.name || sym
-          const { data: inserted } = await supabase
+          const { data: inserted, error: insertErr } = await supabase
             .from('assets')
             .insert({ symbol: sym, name, category: 'spot', coingecko_id: sym.toLowerCase() })
             .select('id')
@@ -323,10 +326,15 @@ export function NLTransactionModal({ portfolioId, onParsedSingle, onBulkSave, on
           if (inserted?.id) {
             assetMap.set(sym, inserted.id)
           } else {
-            // Asset already exists — fetch it
-            const { data: existing } = await supabase
-              .from('assets').select('id').eq('symbol', sym).maybeSingle()
-            if (existing?.id) assetMap.set(sym, existing.id)
+            // Unique constraint hit — fetch existing row
+            const { data: found, error: fetchErr } = await supabase
+              .from('assets').select('id').eq('symbol', sym).limit(1)
+            const existing = found?.[0]
+            if (existing?.id) {
+              assetMap.set(sym, existing.id)
+            } else {
+              throw new Error(`Could not create or find asset "${sym}". ${insertErr?.message ?? fetchErr?.message ?? ''}`)
+            }
           }
         }
       }
@@ -346,7 +354,10 @@ export function NLTransactionModal({ portfolioId, onParsedSingle, onBulkSave, on
           fee_usd: parseFloat(tx.fee_usd) || 0, date, notes: tx.notes || null }]
       })
 
-      if (rows.length === 0) throw new Error('Could not resolve any assets. Check symbols.')
+      if (rows.length === 0) {
+        const unresolved = selectedTxs.map(tx => (tx.symbol ?? '').toUpperCase()).filter(s => !assetMap.has(s))
+        throw new Error(`Could not resolve assets: ${unresolved.join(', ') || 'unknown'}. assetMap has: ${[...assetMap.keys()].join(', ') || 'nothing'}.`)
+      }
 
       // Step 4: single bulk insert
       setSaveStatus({ label: `Saving ${rows.length} transaction${rows.length !== 1 ? 's' : ''}…`, pct: 85 })
