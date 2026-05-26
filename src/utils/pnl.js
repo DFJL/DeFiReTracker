@@ -8,6 +8,7 @@ export function computeAssetPnl(transactions, currentPrice) {
   let totalCost = 0
   let totalQty = 0
   let realizedPnl = 0
+  let grossInvested = 0
 
   const sorted = [...transactions].sort((a, b) => new Date(a.date) - new Date(b.date))
 
@@ -19,6 +20,7 @@ export function computeAssetPnl(transactions, currentPrice) {
     if (tx.type === 'buy' || tx.type === 'transfer_in' || tx.type === 'earn') {
       totalCost += qty * price + fee
       totalQty += qty
+      grossInvested += qty * price + fee
     } else if (tx.type === 'sell' || tx.type === 'transfer_out') {
       const avgCostNow = totalQty > 0 ? totalCost / totalQty : 0
       realizedPnl += (price - avgCostNow) * qty - fee
@@ -35,7 +37,7 @@ export function computeAssetPnl(transactions, currentPrice) {
     avgCost > 0 && unrealizedPnl != null ? (unrealizedPnl / (avgCost * qty)) * 100 : null
 
   const costBasis = Math.max(0, totalCost)
-  return { qty, avgCost, costBasis, realizedPnl, unrealizedPnl, unrealizedPct, currentValue }
+  return { qty, avgCost, costBasis, grossInvested, realizedPnl, unrealizedPnl, unrealizedPct, currentValue }
 }
 
 /**
@@ -46,6 +48,7 @@ export function aggregatePortfolio(assetRows) {
   let totalUnrealized = 0
   let totalRealized = 0
   let totalInvested = 0
+  let totalGrossInvested = 0
   const byCategory = {}
 
   for (const row of assetRows) {
@@ -53,6 +56,7 @@ export function aggregatePortfolio(assetRows) {
     totalUnrealized += row.unrealizedPnl ?? 0
     totalRealized += row.realizedPnl ?? 0
     totalInvested += row.costBasis ?? 0
+    totalGrossInvested += row.grossInvested ?? 0
 
     const cat = row.category ?? 'spot'
     byCategory[cat] = (byCategory[cat] ?? 0) + (row.currentValue ?? 0)
@@ -61,5 +65,5 @@ export function aggregatePortfolio(assetRows) {
   const costBasis = totalValue - totalUnrealized
   const unrealizedPct = costBasis > 0 ? (totalUnrealized / costBasis) * 100 : 0
 
-  return { totalValue, totalUnrealized, totalRealized, totalInvested, unrealizedPct, byCategory }
+  return { totalValue, totalUnrealized, totalRealized, totalInvested, totalGrossInvested, unrealizedPct, byCategory }
 }

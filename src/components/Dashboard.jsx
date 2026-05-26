@@ -32,7 +32,7 @@ export function Dashboard({ transactions, assets, prices, changes, pmktSummary }
       .filter(Boolean)
   }, [transactions, assets, prices])
 
-  const { totalValue, totalUnrealized, totalRealized, totalInvested, unrealizedPct, byCategory } =
+  const { totalValue, totalUnrealized, totalRealized, totalInvested, totalGrossInvested, unrealizedPct, byCategory } =
     useMemo(() => aggregatePortfolio(assetRows), [assetRows])
 
   const { change24hUsd, change24hPct } = useMemo(() => {
@@ -149,8 +149,9 @@ export function Dashboard({ transactions, assets, prices, changes, pmktSummary }
       </div>
 
       {/* Secondary stats */}
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 md:gap-3">
-        <StatBox label="Invested (cost basis)" value={fmtUsd(combinedInvested)} />
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 md:gap-3">
+        <StatBox label="Total Invested" value={fmtUsd(totalGrossInvested + (pmktSummary?.invested ?? 0))} sub="all buys, ever" />
+        <StatBox label="Cost Basis (held)" value={fmtUsd(combinedInvested)} sub="current positions" />
         <StatBox
           label="Unrealized PnL"
           value={fmtUsd(totalUnrealized)}
