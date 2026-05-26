@@ -32,13 +32,29 @@ function ColHeader({ label, col, sort, onSort, className = '' }) {
   )
 }
 
-export function HoldingsTable({ transactions, assets, prices, changes, pmktPositions = [] }) {
-  const [sort, setSort]       = useState({ col: 'value', dir: 'desc' })
-  const [search, setSearch]   = useState('')
+export function HoldingsTable({ transactions, assets, prices, changes, pmktPositions = [], onUpdateAsset }) {
+  const [sort, setSort]         = useState({ col: 'value', dir: 'desc' })
+  const [search, setSearch]     = useState('')
   const [catFilter, setCatFilter] = useState('')
+  const [editingId, setEditingId] = useState(null)
+  const [editDraft, setEditDraft] = useState({})
+  const [editSaving, setEditSaving] = useState(false)
 
   function handleSort(col) {
     setSort(s => s.col === col ? { col, dir: s.dir === 'asc' ? 'desc' : 'asc' } : { col, dir: 'desc' })
+  }
+
+  function startEdit(row) {
+    setEditingId(row.id)
+    setEditDraft({ name: row.name ?? '', coingecko_id: row.coingecko_id ?? '', category: row.category ?? 'spot' })
+  }
+
+  async function saveEdit() {
+    if (!onUpdateAsset || !editingId) return
+    setEditSaving(true)
+    await onUpdateAsset(editingId, editDraft)
+    setEditSaving(false)
+    setEditingId(null)
   }
 
   const allRows = useMemo(() => {
@@ -161,7 +177,8 @@ export function HoldingsTable({ transactions, assets, prices, changes, pmktPosit
                   </td>
                 </tr>
               ) : rows.map(row => (
-                <tr key={row.id} className="hover:bg-surface-2 transition-colors">
+                <>
+                <tr key={row.id} className="group hover:bg-surface-2 transition-colors">
                   <td className="px-4 py-3">
                     <div className="flex items-center gap-2 flex-wrap">
                       <span className="font-semibold text-gray-100">{row.symbol}</span>
@@ -172,7 +189,18 @@ export function HoldingsTable({ transactions, assets, prices, changes, pmktPosit
                         {row.blockchain ?? 'hyperevm'}
                       </span>
                     </div>
-                    <div className="text-xs text-gray-500 mt-0.5">{row.name}</div>
+                    <div className="flex items-center gap-1.5 mt-0.5">
+                      <span className="text-xs text-gray-500">{row.name}</span>
+                      {onUpdateAsset && (
+                        <button
+                          onClick={() => editingId === row.id ? setEditingId(null) : startEdit(row)}
+                          className="text-gray-700 hover:text-accent transition-colors opacity-0 group-hover:opacity-100 text-xs leading-none"
+                          title="Edit asset"
+                        >
+                          ✎
+                        </button>
+                      )}
+                    </div>
                   </td>
                   <td className="px-4 py-3 text-right num text-gray-200 hidden md:table-cell">
                     {row.currentPrice != null ? fmtUsd(row.currentPrice) : <span className="text-gray-600">—</span>}
@@ -198,6 +226,60 @@ export function HoldingsTable({ transactions, assets, prices, changes, pmktPosit
                     {fmtUsd(row.realizedPnl)}
                   </td>
                 </tr>
+                {editingId === row.id && (
+                  <tr key={`${row.id}-edit`} className="bg-surface-2 border-b border-border">
+                    <td colSpan={8} className="px-4 py-3">
+                      <div className="flex flex-wrap gap-3 items-end">
+                        <div>
+                          <label className="text-xs text-gray-500 block mb-1">CoinGecko ID</label>
+                          <input
+                            value={editDraft.coingecko_id}
+                            onChange={e => setEditDraft(d => ({ ...d, coingecko_id: e.target.value.trim() }))}
+                            placeholder="e.g. bitcoin"
+                            className="bg-surface-3 border border-border rounded px-2 py-1 text-xs text-gray-200 focus:outline-none focus:border-accent w-36"
+                          />
+                        </div>
+                        <div>
+                          <label className="text-xs text-gray-500 block mb-1">Name</label>
+                          <input
+                            value={editDraft.name}
+                            onChange={e => setEditDraft(d => ({ ...d, name: e.target.value }))}
+                            className="bg-surface-3 border border-border rounded px-2 py-1 text-xs text-gray-200 focus:outline-none focus:border-accent w-36"
+                          />
+                        </div>
+                        <div>
+                          <label className="text-xs text-gray-500 block mb-1">Category</label>
+                          <select
+                            value={editDraft.category}
+                            onChange={e => setEditDraft(d => ({ ...d, category: e.target.value }))}
+                            className="bg-surface-3 border border-border rounded px-2 py-1 text-xs text-gray-400 focus:outline-none focus:border-accent"
+                          >
+                            {CATEGORIES.map(c => <option key={c} value={c}>{c}</option>)}
+                          </select>
+                        </div>
+                        <div className="flex gap-2 items-center">
+                          <button
+                            onClick={saveEdit}
+                            disabled={editSaving}
+                            className="px-3 py-1 text-xs bg-accent hover:bg-indigo-500 text-white rounded transition-colors disabled:opacity-50"
+                          >
+                            {editSaving ? 'Saving…' : 'Save'}
+                          </button>
+                          <button
+                            onClick={() => setEditingId(null)}
+                            className="px-3 py-1 text-xs text-gray-500 hover:text-gray-300 transition-colors"
+                          >
+                            Cancel
+                          </button>
+                        </div>
+                      </div>
+                      <p className="text-xs text-gray-600 mt-2">
+                        Find the correct ID on coingecko.com — search for the coin and copy the ID from the URL (e.g. <span className="text-gray-400">bitcoin</span>, <span className="text-gray-400">solana</span>, <span className="text-gray-400">arbitrum</span>).
+                      </p>
+                    </td>
+                  </tr>
+                )}
+                </>
               ))}
             </tbody>
           </table>
