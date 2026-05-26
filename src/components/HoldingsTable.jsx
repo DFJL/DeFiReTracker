@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react'
 import { computeAssetPnl } from '../utils/pnl'
 import { fmtUsd, fmtQty, fmtPct, pnlClass } from '../utils/format'
+import { AssetDetail } from './AssetDetail'
 
 const CATEGORY_BADGE = {
   spot:       'bg-indigo-500/20 text-indigo-300',
@@ -13,17 +14,22 @@ const CHAIN_BADGE = {
   solana:   'bg-purple-900/40 text-purple-400',
   ethereum: 'bg-blue-900/40 text-blue-400',
   polygon:  'bg-violet-900/40 text-violet-400',
+  bsc:      'bg-yellow-900/40 text-yellow-400',
+  avalanche:'bg-red-900/40 text-red-400',
+  base:     'bg-blue-900/40 text-blue-300',
+  arbitrum: 'bg-sky-900/40 text-sky-400',
+  bitcoin:  'bg-orange-900/40 text-orange-400',
 }
-const CATEGORIES = ['spot', 'stablecoin', 'defi', 'rwa']
-const PERIODS = ['1H', '24H', '7D', '30D']
+const CATEGORIES  = ['spot', 'stablecoin', 'defi', 'rwa']
+const BLOCKCHAINS = ['hyperevm', 'solana', 'ethereum', 'polygon', 'bsc', 'avalanche', 'base', 'arbitrum', 'bitcoin', 'other']
+const PERIODS     = ['1H', '24H', '7D', '30D']
+const DUST_THRESHOLD = 1
 
 function Sparkline({ data, width = 80, height = 28 }) {
   if (!data?.length || data.length < 2) return <span className="text-gray-700 text-xs">—</span>
   const step = Math.max(1, Math.floor(data.length / 40))
   const pts = data.filter((_, i) => i % step === 0 || i === data.length - 1)
-  const min = Math.min(...pts)
-  const max = Math.max(...pts)
-  const range = max - min || 1
+  const min = Math.min(...pts), max = Math.max(...pts), range = max - min || 1
   const pad = 2
   const coords = pts.map((p, i) => [
     pad + (i / (pts.length - 1)) * (width - pad * 2),
@@ -55,14 +61,16 @@ function ColHeader({ label, col, sort, onSort, className = '' }) {
 }
 
 export function HoldingsTable({ transactions, assets, prices, changes, marketData = {}, pmktPositions = [], onUpdateAsset, onAutoFix }) {
-  const [sort, setSort]           = useState({ col: 'value', dir: 'desc' })
-  const [search, setSearch]       = useState('')
-  const [catFilter, setCatFilter] = useState('')
+  const [sort, setSort]               = useState({ col: 'value', dir: 'desc' })
+  const [search, setSearch]           = useState('')
+  const [catFilter, setCatFilter]     = useState('')
   const [changePeriod, setChangePeriod] = useState('24H')
-  const [editingId, setEditingId] = useState(null)
-  const [editDraft, setEditDraft] = useState({})
-  const [editSaving, setEditSaving] = useState(false)
-  const [autoFixing, setAutoFixing] = useState(false)
+  const [hideDust, setHideDust]       = useState(false)
+  const [editingId, setEditingId]     = useState(null)
+  const [editDraft, setEditDraft]     = useState({})
+  const [editSaving, setEditSaving]   = useState(false)
+  const [autoFixing, setAutoFixing]   = useState(false)
+  const [selectedAsset, setSelectedAsset] = useState(null)
 
   function handleSort(col) {
     setSort(s => s.col === col ? { col, dir: s.dir === 'asc' ? 'desc' : 'asc' } : { col, dir: 'desc' })
@@ -70,7 +78,12 @@ export function HoldingsTable({ transactions, assets, prices, changes, marketDat
 
   function startEdit(row) {
     setEditingId(row.id)
-    setEditDraft({ name: row.name ?? '', coingecko_id: row.coingecko_id ?? '', category: row.category ?? 'spot' })
+    setEditDraft({
+      name:         row.name         ?? '',
+      coingecko_id: row.coingecko_id ?? '',
+      category:     row.category     ?? 'spot',
+      blockchain:   row.blockchain   ?? 'hyperevm',
+    })
   }
 
   async function saveEdit() {
@@ -110,6 +123,7 @@ export function HoldingsTable({ transactions, assets, prices, changes, marketDat
 
   const rows = useMemo(() => {
     let r = allRows
+    if (hideDust) r = r.filter(row => (row.currentValue ?? 0) >= DUST_THRESHOLD)
     if (search.trim()) {
       const q = search.trim().toLowerCase()
       r = r.filter(row => row.symbol?.toLowerCase().includes(q) || row.name?.toLowerCase().includes(q))
@@ -128,7 +142,7 @@ export function HoldingsTable({ transactions, assets, prices, changes, marketDat
       if (va > vb) return sort.dir === 'asc' ? 1 : -1
       return 0
     })
-  }, [allRows, search, catFilter, sort, changePeriod, marketData, changes])
+  }, [allRows, hideDust, search, catFilter, sort, changePeriod, marketData, changes])
 
   const pmktRows = useMemo(() => {
     return pmktPositions.map((p, i) => {
@@ -146,7 +160,24 @@ export function HoldingsTable({ transactions, assets, prices, changes, marketDat
   }, [pmktPositions])
 
   const unlinkedAssets = allRows.filter(r => r.currentPrice == null && r.qty > 0)
+  const dustCount = allRows.filter(r => (r.currentValue ?? 0) < DUST_THRESHOLD).length
   const hasAny = allRows.length > 0 || pmktRows.length > 0
+
+  // Asset drilldown view
+  if (selectedAsset) {
+    const assetTxs = transactions.filter(t => t.asset_id === selectedAsset.id)
+    return (
+      <AssetDetail
+        asset={selectedAsset}
+        transactions={assetTxs}
+        prices={prices}
+        marketData={marketData}
+        changes={changes}
+        onBack={() => setSelectedAsset(null)}
+        onUpdateAsset={onUpdateAsset}
+      />
+    )
+  }
 
   if (!hasAny) return (
     <div className="bg-surface-1 border border-border rounded-lg p-8 text-center text-gray-500 text-sm">
@@ -194,6 +225,19 @@ export function HoldingsTable({ transactions, assets, prices, changes, marketDat
             <option value="">All categories</option>
             {CATEGORIES.map(c => <option key={c} value={c}>{c}</option>)}
           </select>
+          {/* Dust toggle */}
+          <button
+            onClick={() => setHideDust(h => !h)}
+            className={`flex items-center gap-1.5 px-2.5 py-1.5 text-xs rounded border transition-colors ${
+              hideDust
+                ? 'bg-accent/20 border-accent text-accent'
+                : 'border-border text-gray-500 hover:border-gray-500 hover:text-gray-300'
+            }`}
+            title={`Hide assets under $${DUST_THRESHOLD}`}
+          >
+            <span>Hide dust</span>
+            {dustCount > 0 && <span className="opacity-60">({dustCount})</span>}
+          </button>
           {(search || catFilter) && (
             <button onClick={() => { setSearch(''); setCatFilter('') }} className="text-xs text-gray-600 hover:text-gray-400 transition-colors">
               Clear
@@ -231,15 +275,14 @@ export function HoldingsTable({ transactions, assets, prices, changes, marketDat
                     <SortIcon active={sort.col === 'change'} dir={sort.dir} />
                   </div>
                 </th>
-                {/* Sparkline */}
                 <th className="px-4 py-3 text-right text-xs text-gray-500 uppercase tracking-wider hidden lg:table-cell">
                   7D Chart
                 </th>
                 <th className="px-4 py-3 text-right text-xs text-gray-500 uppercase tracking-wider hidden sm:table-cell">Holdings</th>
-                <ColHeader label="Avg Cost" col="avgcost" sort={sort} onSort={handleSort} className="px-4 text-right hidden lg:table-cell" />
-                <ColHeader label="Value"    col="value"   sort={sort} onSort={handleSort} className="px-4 text-right" />
-                <ColHeader label="Unrealized" col="unrealized" sort={sort} onSort={handleSort} className="px-4 text-right" />
-                <ColHeader label="Realized"   col="realized"   sort={sort} onSort={handleSort} className="px-4 text-right hidden lg:table-cell" />
+                <ColHeader label="Avg Cost"    col="avgcost"    sort={sort} onSort={handleSort} className="px-4 text-right hidden lg:table-cell" />
+                <ColHeader label="Value"       col="value"      sort={sort} onSort={handleSort} className="px-4 text-right" />
+                <ColHeader label="Unrealized"  col="unrealized" sort={sort} onSort={handleSort} className="px-4 text-right" />
+                <ColHeader label="Realized"    col="realized"   sort={sort} onSort={handleSort} className="px-4 text-right hidden lg:table-cell" />
               </tr>
             </thead>
             <tbody className="divide-y divide-border">
@@ -254,7 +297,11 @@ export function HoldingsTable({ transactions, assets, prices, changes, marketDat
                 const sparkline = marketData[row.coingecko_id]?.sparkline
                 return (
                   <>
-                  <tr key={row.id} className="group hover:bg-surface-2 transition-colors">
+                  <tr
+                    key={row.id}
+                    className="group hover:bg-surface-2 transition-colors cursor-pointer"
+                    onClick={() => setSelectedAsset(row)}
+                  >
                     <td className="px-4 py-3">
                       <div className="flex items-center gap-2 flex-wrap">
                         <span className="font-semibold text-gray-100">{row.symbol}</span>
@@ -269,9 +316,9 @@ export function HoldingsTable({ transactions, assets, prices, changes, marketDat
                         <span className="text-xs text-gray-500">{row.name}</span>
                         {onUpdateAsset && (
                           <button
-                            onClick={() => editingId === row.id ? setEditingId(null) : startEdit(row)}
+                            onClick={e => { e.stopPropagation(); editingId === row.id ? setEditingId(null) : startEdit(row) }}
                             className="text-gray-700 hover:text-accent transition-colors opacity-0 group-hover:opacity-100 text-xs leading-none"
-                            title="Edit asset"
+                            title="Edit asset labels"
                           >
                             ✎
                           </button>
@@ -307,7 +354,7 @@ export function HoldingsTable({ transactions, assets, prices, changes, marketDat
                   </tr>
                   {editingId === row.id && (
                     <tr key={`${row.id}-edit`} className="bg-surface-2 border-b border-border">
-                      <td colSpan={9} className="px-4 py-3">
+                      <td colSpan={9} className="px-4 py-3" onClick={e => e.stopPropagation()}>
                         <div className="flex flex-wrap gap-3 items-end">
                           <div>
                             <label className="text-xs text-gray-500 block mb-1">CoinGecko ID</label>
@@ -327,13 +374,23 @@ export function HoldingsTable({ transactions, assets, prices, changes, marketDat
                             />
                           </div>
                           <div>
-                            <label className="text-xs text-gray-500 block mb-1">Category</label>
+                            <label className="text-xs text-gray-500 block mb-1">Asset Type</label>
                             <select
                               value={editDraft.category}
                               onChange={e => setEditDraft(d => ({ ...d, category: e.target.value }))}
                               className="bg-surface-3 border border-border rounded px-2 py-1 text-xs text-gray-400 focus:outline-none focus:border-accent"
                             >
                               {CATEGORIES.map(c => <option key={c} value={c}>{c}</option>)}
+                            </select>
+                          </div>
+                          <div>
+                            <label className="text-xs text-gray-500 block mb-1">Blockchain</label>
+                            <select
+                              value={editDraft.blockchain}
+                              onChange={e => setEditDraft(d => ({ ...d, blockchain: e.target.value }))}
+                              className="bg-surface-3 border border-border rounded px-2 py-1 text-xs text-gray-400 focus:outline-none focus:border-accent"
+                            >
+                              {BLOCKCHAINS.map(b => <option key={b} value={b}>{b}</option>)}
                             </select>
                           </div>
                           <div className="flex gap-2 items-center">
@@ -353,7 +410,7 @@ export function HoldingsTable({ transactions, assets, prices, changes, marketDat
                           </div>
                         </div>
                         <p className="text-xs text-gray-600 mt-2">
-                          Find the correct ID on coingecko.com — search the coin and copy the ID from the URL (e.g. <span className="text-gray-400">bitcoin</span>, <span className="text-gray-400">solana</span>, <span className="text-gray-400">arbitrum</span>).
+                          CoinGecko ID: search the coin at coingecko.com and copy the ID from the URL (e.g. <span className="text-gray-400">bitcoin</span>, <span className="text-gray-400">solana</span>).
                         </p>
                       </td>
                     </tr>
