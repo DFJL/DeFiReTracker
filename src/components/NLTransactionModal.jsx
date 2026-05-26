@@ -83,7 +83,7 @@ function toBase64(file) {
   })
 }
 
-function BulkReview({ rows, onConfirm, onBack, saving }) {
+function BulkReview({ rows, onConfirm, onBack, saving, saveStatus }) {
   const [selected, setSelected] = useState(() => new Set(rows.map((_, i) => i)))
 
   function toggle(i) {
@@ -168,8 +168,23 @@ function BulkReview({ rows, onConfirm, onBack, saving }) {
         </table>
       </div>
 
+      {saving && saveStatus && (
+        <div className="space-y-1.5 pt-1">
+          <div className="flex justify-between text-xs text-gray-500">
+            <span>{saveStatus.label}</span>
+            <span>{saveStatus.pct}%</span>
+          </div>
+          <div className="h-1.5 bg-surface-3 rounded-full overflow-hidden">
+            <div
+              className="h-full bg-accent rounded-full transition-all duration-300"
+              style={{ width: `${saveStatus.pct}%` }}
+            />
+          </div>
+        </div>
+      )}
+
       <div className="flex justify-between items-center pt-1">
-        <button onClick={onBack} className="text-sm text-gray-500 hover:text-gray-300 transition-colors">
+        <button onClick={onBack} disabled={saving} className="text-sm text-gray-500 hover:text-gray-300 transition-colors disabled:opacity-40">
           ← Back
         </button>
         <button
@@ -183,7 +198,7 @@ function BulkReview({ rows, onConfirm, onBack, saving }) {
               <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
             </svg>
           )}
-          {saving ? 'Saving…' : `Import ${selected.size} transaction${selected.size !== 1 ? 's' : ''}`}
+          {saving ? saveStatus?.label ?? 'Saving…' : `Import ${selected.size} transaction${selected.size !== 1 ? 's' : ''}`}
         </button>
       </div>
     </div>
@@ -196,6 +211,7 @@ export function NLTransactionModal({ portfolioId, onParsedSingle, onBulkSave, on
   const [dragging, setDragging] = useState(false)
   const [loading, setLoading] = useState(false)
   const [saving, setSaving] = useState(false)
+  const [saveStatus, setSaveStatus] = useState(null) // { label, pct }
   const [error, setError] = useState(null)
   const [parsed, setParsed] = useState(null) // array of tx objects
   const fileInputRef = useRef(null)
@@ -283,66 +299,61 @@ export function NLTransactionModal({ portfolioId, onParsedSingle, onBulkSave, on
     setSaving(true)
     setError(null)
     try {
-      // Resolve asset IDs and build rows
-      const rows = []
-      for (const tx of selectedTxs) {
-        const symbol = (tx.symbol ?? '').toUpperCase()
-        if (!symbol) continue
+      // Step 1: batch-resolve all unique symbols in ONE query
+      setSaveStatus({ label: 'Resolving assets…', pct: 10 })
+      const uniqueSymbols = [...new Set(
+        selectedTxs.map(tx => (tx.symbol ?? '').toUpperCase()).filter(Boolean)
+      )]
+      const { data: existingAssets } = await supabase
+        .from('assets').select('id, symbol').in('symbol', uniqueSymbols)
+      const assetMap = new Map((existingAssets ?? []).map(a => [a.symbol.toUpperCase(), a.id]))
 
-        // Look up or create asset
-        let assetId = null
-        const { data: existing } = await supabase
-          .from('assets')
-          .select('id')
-          .ilike('symbol', symbol)
-          .limit(1)
-          .single()
-
-        if (existing?.id) {
-          assetId = existing.id
-        } else if (tx.name) {
+      // Step 2: create any missing assets (usually none for CoinGecko pastes)
+      const missing = uniqueSymbols.filter(s => !assetMap.has(s))
+      if (missing.length) {
+        setSaveStatus({ label: `Creating ${missing.length} new asset${missing.length > 1 ? 's' : ''}…`, pct: 30 })
+        for (const sym of missing) {
+          const txWithName = selectedTxs.find(tx => (tx.symbol ?? '').toUpperCase() === sym && tx.name)
+          if (!txWithName?.name) continue
           const { data: created } = await supabase
             .from('assets')
             .upsert(
-              { symbol, name: tx.name, category: 'spot', coingecko_id: symbol.toLowerCase() },
+              { symbol: sym, name: txWithName.name, category: 'spot', coingecko_id: sym.toLowerCase() },
               { onConflict: 'coingecko_id' }
             )
-            .select('id')
-            .single()
-          assetId = created?.id
+            .select('id').single()
+          if (created?.id) assetMap.set(sym, created.id)
         }
-
-        if (!assetId) continue
-
-        let date = new Date().toISOString()
-        if (tx.date) {
-          try { const d = new Date(tx.date); if (!isNaN(d)) date = d.toISOString() } catch {}
-        }
-
-        const rawType = (tx.type ?? 'buy').toLowerCase().replace(/\s+/g, '_')
-        const validTypes = ['buy', 'sell', 'transfer_in', 'transfer_out', 'earn']
-        const type = validTypes.includes(rawType) ? rawType : 'buy'
-
-        rows.push({
-          portfolio_id: portfolioId,
-          asset_id: assetId,
-          type,
-          qty: parseFloat(tx.qty) || 0,
-          price_usd: parseFloat(tx.price_usd) || 0,
-          fee_usd: parseFloat(tx.fee_usd) || 0,
-          date,
-          notes: tx.notes || null,
-        })
       }
 
+      // Step 3: build rows (synchronous — no DB round trips)
+      setSaveStatus({ label: 'Preparing rows…', pct: 60 })
+      const validTypes = new Set(['buy', 'sell', 'transfer_in', 'transfer_out', 'earn'])
+      const rows = selectedTxs.flatMap(tx => {
+        const symbol = (tx.symbol ?? '').toUpperCase()
+        const assetId = assetMap.get(symbol)
+        if (!assetId) return []
+        let date = new Date().toISOString()
+        if (tx.date) { try { const d = new Date(tx.date); if (!isNaN(d)) date = d.toISOString() } catch {} }
+        const type = validTypes.has((tx.type ?? '').toLowerCase()) ? tx.type.toLowerCase() : 'buy'
+        return [{ portfolio_id: portfolioId, asset_id: assetId, type,
+          qty: parseFloat(tx.qty) || 0, price_usd: parseFloat(tx.price_usd) || 0,
+          fee_usd: parseFloat(tx.fee_usd) || 0, date, notes: tx.notes || null }]
+      })
+
       if (rows.length === 0) throw new Error('Could not resolve any assets. Check symbols.')
+
+      // Step 4: single bulk insert
+      setSaveStatus({ label: `Saving ${rows.length} transaction${rows.length !== 1 ? 's' : ''}…`, pct: 85 })
       const { error: err } = await onBulkSave(rows)
       if (err) throw new Error(err.message)
+      setSaveStatus({ label: 'Done!', pct: 100 })
       onClose()
     } catch (e) {
       setError(e.message)
     } finally {
       setSaving(false)
+      setSaveStatus(null)
     }
   }
 
@@ -358,7 +369,7 @@ export function NLTransactionModal({ portfolioId, onParsedSingle, onBulkSave, on
         {error && (
           <div className="bg-red-900/20 border border-red-800 rounded p-3 text-sm text-red-400">{error}</div>
         )}
-        <BulkReview rows={parsed} onConfirm={handleBulkConfirm} onBack={() => setParsed(null)} saving={saving} />
+        <BulkReview rows={parsed} onConfirm={handleBulkConfirm} onBack={() => setParsed(null)} saving={saving} saveStatus={saveStatus} />
       </div>
     )
   }
