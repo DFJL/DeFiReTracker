@@ -15,7 +15,7 @@ const CHAIN_BADGE = {
   polygon:  'bg-violet-900/40 text-violet-400',
 }
 
-export function HoldingsTable({ transactions, assets, prices, changes }) {
+export function HoldingsTable({ transactions, assets, prices, changes, pmktPositions = [] }) {
   const rows = useMemo(() => {
     return assets
       .map(asset => {
@@ -25,75 +25,149 @@ export function HoldingsTable({ transactions, assets, prices, changes }) {
         const pnl = computeAssetPnl(txs, price)
         if (pnl.qty <= 0 && pnl.realizedPnl === 0) return null
         const change24h = changes[asset.coingecko_id] ?? null
-        return { ...asset, ...pnl, currentPrice: price ?? null, change24h }
+        return { ...asset, ...pnl, currentPrice: price ?? null, change24h, _type: 'asset' }
       })
       .filter(Boolean)
       .sort((a, b) => (b.currentValue ?? 0) - (a.currentValue ?? 0))
   }, [transactions, assets, prices, changes])
 
-  if (!rows.length) return (
+  // Build Polymarket rows from open positions
+  const pmktRows = useMemo(() => {
+    return pmktPositions.map((p, i) => {
+      const size = Number(p.size ?? 0)
+      const avgPrice = Number(p.avgPrice ?? 0)
+      const currentPrice = Number(p.currentPrice ?? 0)
+      const value = Number(p.currentValue ?? (size * currentPrice))
+      const invested = size * avgPrice
+      const pnl = value - invested
+      const pct = invested > 0 ? (pnl / invested) * 100 : null
+      const outcome = p.outcome ?? p.side ?? ''
+      const title = p.title ?? p.question ?? p.market?.question ?? 'Unknown market'
+      return { _type: 'pmkt', _key: i, title, outcome, size, avgPrice, currentPrice, currentValue: value, invested, pnl, pct }
+    })
+  }, [pmktPositions])
+
+  const hasAny = rows.length > 0 || pmktRows.length > 0
+
+  if (!hasAny) return (
     <div className="bg-surface-1 border border-border rounded-lg p-8 text-center text-gray-500 text-sm">
       No holdings yet. Add a transaction to get started.
     </div>
   )
 
   return (
-    <div className="bg-surface-1 border border-border rounded-lg overflow-x-auto">
-      <table className="w-full text-sm">
-        <thead>
-          <tr className="border-b border-border text-xs text-gray-500 uppercase tracking-wider">
-            <th className="px-4 py-3 text-left">Asset</th>
-            <th className="px-4 py-3 text-right hidden md:table-cell">Price</th>
-            <th className="px-4 py-3 text-right">24h</th>
-            <th className="px-4 py-3 text-right hidden sm:table-cell">Holdings</th>
-            <th className="px-4 py-3 text-right hidden lg:table-cell">Avg Cost</th>
-            <th className="px-4 py-3 text-right">Value</th>
-            <th className="px-4 py-3 text-right">Unrealized</th>
-            <th className="px-4 py-3 text-right hidden lg:table-cell">Realized</th>
-          </tr>
-        </thead>
-        <tbody className="divide-y divide-border">
-          {rows.map(row => (
-            <tr key={row.id} className="hover:bg-surface-2 transition-colors">
-              <td className="px-4 py-3">
-                <div className="flex items-center gap-2 flex-wrap">
-                  <span className="font-semibold text-gray-100">{row.symbol}</span>
-                  <span className={`text-xs px-1.5 py-0.5 rounded ${CATEGORY_BADGE[row.category] ?? ''}`}>
-                    {row.category}
-                  </span>
-                  <span className={`text-xs px-1.5 py-0.5 rounded ${CHAIN_BADGE[row.blockchain] ?? 'bg-gray-800 text-gray-400'}`}>
-                    {row.blockchain ?? 'hyperevm'}
-                  </span>
-                </div>
-                <div className="text-xs text-gray-500 mt-0.5">{row.name}</div>
-              </td>
-              <td className="px-4 py-3 text-right num text-gray-200 hidden md:table-cell">
-                {row.currentPrice != null ? fmtUsd(row.currentPrice) : <span className="text-gray-600">—</span>}
-              </td>
-              <td className={`px-4 py-3 text-right num text-xs ${pnlClass(row.change24h)}`}>
-                {row.change24h != null ? fmtPct(row.change24h) : <span className="text-gray-600">—</span>}
-              </td>
-              <td className="px-4 py-3 text-right hidden sm:table-cell">
-                <div className="num text-gray-200">{fmtQty(row.qty)}</div>
-                <div className="num text-xs text-gray-500">{fmtUsd(row.currentValue)}</div>
-              </td>
-              <td className="px-4 py-3 text-right num text-gray-400 hidden lg:table-cell">{fmtUsd(row.avgCost)}</td>
-              <td className="px-4 py-3 text-right num text-gray-200">{fmtUsd(row.currentValue)}</td>
-              <td className="px-4 py-3 text-right num">
-                {row.unrealizedPnl != null ? (
-                  <div className={pnlClass(row.unrealizedPnl)}>
-                    <div>{fmtUsd(row.unrealizedPnl)}</div>
-                    <div className="text-xs">{fmtPct(row.unrealizedPct)}</div>
-                  </div>
-                ) : <span className="text-gray-600">—</span>}
-              </td>
-              <td className={`px-4 py-3 text-right num hidden lg:table-cell ${pnlClass(row.realizedPnl)}`}>
-                {fmtUsd(row.realizedPnl)}
-              </td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
+    <div className="space-y-4">
+      {rows.length > 0 && (
+        <div className="bg-surface-1 border border-border rounded-lg overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="border-b border-border text-xs text-gray-500 uppercase tracking-wider">
+                <th className="px-4 py-3 text-left">Asset</th>
+                <th className="px-4 py-3 text-right hidden md:table-cell">Price</th>
+                <th className="px-4 py-3 text-right">24h</th>
+                <th className="px-4 py-3 text-right hidden sm:table-cell">Holdings</th>
+                <th className="px-4 py-3 text-right hidden lg:table-cell">Avg Cost</th>
+                <th className="px-4 py-3 text-right">Value</th>
+                <th className="px-4 py-3 text-right">Unrealized</th>
+                <th className="px-4 py-3 text-right hidden lg:table-cell">Realized</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-border">
+              {rows.map(row => (
+                <tr key={row.id} className="hover:bg-surface-2 transition-colors">
+                  <td className="px-4 py-3">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span className="font-semibold text-gray-100">{row.symbol}</span>
+                      <span className={`text-xs px-1.5 py-0.5 rounded ${CATEGORY_BADGE[row.category] ?? ''}`}>
+                        {row.category}
+                      </span>
+                      <span className={`text-xs px-1.5 py-0.5 rounded ${CHAIN_BADGE[row.blockchain] ?? 'bg-gray-800 text-gray-400'}`}>
+                        {row.blockchain ?? 'hyperevm'}
+                      </span>
+                    </div>
+                    <div className="text-xs text-gray-500 mt-0.5">{row.name}</div>
+                  </td>
+                  <td className="px-4 py-3 text-right num text-gray-200 hidden md:table-cell">
+                    {row.currentPrice != null ? fmtUsd(row.currentPrice) : <span className="text-gray-600">—</span>}
+                  </td>
+                  <td className={`px-4 py-3 text-right num text-xs ${pnlClass(row.change24h)}`}>
+                    {row.change24h != null ? fmtPct(row.change24h) : <span className="text-gray-600">—</span>}
+                  </td>
+                  <td className="px-4 py-3 text-right hidden sm:table-cell">
+                    <div className="num text-gray-200">{fmtQty(row.qty)}</div>
+                    <div className="num text-xs text-gray-500">{fmtUsd(row.currentValue)}</div>
+                  </td>
+                  <td className="px-4 py-3 text-right num text-gray-400 hidden lg:table-cell">{fmtUsd(row.avgCost)}</td>
+                  <td className="px-4 py-3 text-right num text-gray-200">{fmtUsd(row.currentValue)}</td>
+                  <td className="px-4 py-3 text-right num">
+                    {row.unrealizedPnl != null ? (
+                      <div className={pnlClass(row.unrealizedPnl)}>
+                        <div>{fmtUsd(row.unrealizedPnl)}</div>
+                        <div className="text-xs">{fmtPct(row.unrealizedPct)}</div>
+                      </div>
+                    ) : <span className="text-gray-600">—</span>}
+                  </td>
+                  <td className={`px-4 py-3 text-right num hidden lg:table-cell ${pnlClass(row.realizedPnl)}`}>
+                    {fmtUsd(row.realizedPnl)}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      {pmktRows.length > 0 && (
+        <div className="bg-surface-1 border border-border rounded-lg overflow-x-auto">
+          <div className="px-4 py-2.5 border-b border-border flex items-center gap-2">
+            <span className="text-xs text-violet-400 font-semibold uppercase tracking-wider">Polymarket Positions</span>
+            <span className="text-xs text-gray-600">{pmktRows.length} open</span>
+          </div>
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="border-b border-border text-xs text-gray-500 uppercase tracking-wider">
+                <th className="px-4 py-3 text-left">Market</th>
+                <th className="px-4 py-3 text-left hidden sm:table-cell">Outcome</th>
+                <th className="px-4 py-3 text-right hidden sm:table-cell">Shares</th>
+                <th className="px-4 py-3 text-right hidden md:table-cell">Avg Price</th>
+                <th className="px-4 py-3 text-right hidden md:table-cell">Cur Price</th>
+                <th className="px-4 py-3 text-right">Value</th>
+                <th className="px-4 py-3 text-right">PnL</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-border">
+              {pmktRows.map(row => (
+                <tr key={row._key} className="hover:bg-surface-2 transition-colors">
+                  <td className="px-4 py-3 max-w-xs">
+                    <div className="flex items-center gap-1.5 flex-wrap">
+                      <span className="text-xs px-1.5 py-0.5 rounded bg-violet-900/40 text-violet-400">PMKT</span>
+                      <span className={`text-xs px-1.5 py-0.5 rounded sm:hidden ${
+                        row.outcome.toLowerCase() === 'yes' ? 'bg-green-500/20 text-green-300' : 'bg-red-500/20 text-red-300'
+                      }`}>{row.outcome || '—'}</span>
+                    </div>
+                    <div className="text-gray-200 text-xs leading-snug line-clamp-2 mt-1">{row.title}</div>
+                  </td>
+                  <td className="px-4 py-3 hidden sm:table-cell">
+                    <span className={`text-xs px-1.5 py-0.5 rounded ${
+                      row.outcome.toLowerCase() === 'yes' ? 'bg-green-500/20 text-green-300' : 'bg-red-500/20 text-red-300'
+                    }`}>
+                      {row.outcome || '—'}
+                    </span>
+                  </td>
+                  <td className="px-4 py-3 text-right num text-gray-300 hidden sm:table-cell">{row.size.toFixed(2)}</td>
+                  <td className="px-4 py-3 text-right num text-gray-400 hidden md:table-cell">{row.avgPrice.toFixed(3)}</td>
+                  <td className="px-4 py-3 text-right num text-gray-400 hidden md:table-cell">{row.currentPrice.toFixed(3)}</td>
+                  <td className="px-4 py-3 text-right num text-gray-200">{fmtUsd(row.currentValue)}</td>
+                  <td className={`px-4 py-3 text-right num ${pnlClass(row.pnl)}`}>
+                    <div>{fmtUsd(row.pnl)}</div>
+                    {row.pct != null && <div className="text-xs">{fmtPct(row.pct)}</div>}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
     </div>
   )
 }

@@ -4,6 +4,7 @@ import { computeAssetPnl, aggregatePortfolio } from '../utils/pnl'
 import { usePortfolioHistory } from '../hooks/usePortfolioHistory'
 import { PortfolioChart } from './PortfolioChart'
 import { AllocationChart } from './AllocationChart'
+import { AIAnalyzer } from './AIAnalyzer'
 
 function StatBox({ label, value, sub, valueClass = '' }) {
   return (
@@ -34,7 +35,6 @@ export function Dashboard({ transactions, assets, prices, changes, pmktSummary }
   const { totalValue, totalUnrealized, totalRealized, totalInvested, unrealizedPct, byCategory } =
     useMemo(() => aggregatePortfolio(assetRows), [assetRows])
 
-  // 24h portfolio change
   const { change24hUsd, change24hPct } = useMemo(() => {
     let prevValue = 0
     for (const row of assetRows) {
@@ -50,7 +50,6 @@ export function Dashboard({ transactions, assets, prices, changes, pmktSummary }
     }
   }, [assetRows, changes, totalValue])
 
-  // Top performer — period-aware
   const topPerformer = useMemo(() => {
     let changesForPeriod
     if (topPerfPeriod === '1D') {
@@ -70,9 +69,38 @@ export function Dashboard({ transactions, assets, prices, changes, pmktSummary }
     return best
   }, [assetRows, changes, assetChanges, topPerfPeriod])
 
+  const combinedTotal = totalValue + (pmktSummary?.value ?? 0)
+  const combinedInvested = totalInvested + (pmktSummary?.invested ?? 0)
+
+  // Portfolio data for AI analyzer
+  const portfolioData = useMemo(() => ({
+    totalValue: combinedTotal,
+    totalInvested: combinedInvested,
+    totalPnl: totalUnrealized + totalRealized,
+    unrealizedPnl: totalUnrealized,
+    realizedPnl: totalRealized,
+    change24hUsd,
+    change24hPct,
+    hasPmkt: !!pmktSummary,
+    pmktValue: pmktSummary?.value ?? 0,
+    pmktInvested: pmktSummary?.invested ?? 0,
+    assets: assetRows.map(r => ({
+      symbol: r.symbol,
+      name: r.name,
+      category: r.category,
+      value: r.currentValue,
+      qty: r.qty,
+      avgCost: r.avgCost,
+      currentPrice: r.currentPrice,
+      unrealizedPnl: r.unrealizedPnl,
+      unrealizedPct: r.unrealizedPct,
+    })),
+    byCategory,
+  }), [combinedTotal, combinedInvested, totalUnrealized, totalRealized, change24hUsd, change24hPct, pmktSummary, assetRows, byCategory])
+
   return (
     <div className="space-y-4">
-      {/* Header stats — CoinGecko-style */}
+      {/* Header stats */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-2 md:gap-3">
         <div className="bg-surface-1 border border-border rounded-lg px-4 py-3">
           <div className="flex items-center gap-2 mb-0.5">
@@ -82,7 +110,7 @@ export function Dashboard({ transactions, assets, prices, changes, pmktSummary }
             )}
           </div>
           <p className="text-xl font-semibold num leading-tight">
-            {fmtUsd(totalValue + (pmktSummary?.value ?? 0))}
+            {fmtUsd(combinedTotal)}
           </p>
         </div>
         <StatBox
@@ -122,7 +150,7 @@ export function Dashboard({ transactions, assets, prices, changes, pmktSummary }
 
       {/* Secondary stats */}
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 md:gap-3">
-        <StatBox label="Invested (cost basis)" value={fmtUsd(totalInvested + (pmktSummary?.invested ?? 0))} />
+        <StatBox label="Invested (cost basis)" value={fmtUsd(combinedInvested)} />
         <StatBox
           label="Unrealized PnL"
           value={fmtUsd(totalUnrealized)}
@@ -141,6 +169,9 @@ export function Dashboard({ transactions, assets, prices, changes, pmktSummary }
 
       {/* Allocation chart with toggle */}
       <AllocationChart assetRows={assetRows} totalValue={totalValue} />
+
+      {/* AI Portfolio Advisor */}
+      <AIAnalyzer portfolioData={portfolioData} />
     </div>
   )
 }

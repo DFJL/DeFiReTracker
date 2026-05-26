@@ -19,27 +19,64 @@ const EMPTY = {
   _name: '',
 }
 
-export function TransactionForm({ portfolioId, initial, onSave, onCancel }) {
-  const [form, setForm] = useState(() => {
-    if (initial) {
-      const a = initial.asset ?? {}
-      return {
-        ...EMPTY,
-        ...initial,
-        date: initial.date?.slice(0, 16) ?? EMPTY.date,
-        _assetId: initial.asset_id ?? '',
-        _assetSearch: a.symbol ?? '',
-        _category: a.category ?? 'spot',
-        _coingeckoId: a.coingecko_id ?? '',
-        _symbol: a.symbol ?? '',
-        _name: a.name ?? '',
-      }
+function buildInitial(initial, nlPrefill) {
+  if (initial) {
+    const a = initial.asset ?? {}
+    return {
+      ...EMPTY,
+      ...initial,
+      date: initial.date?.slice(0, 16) ?? EMPTY.date,
+      _assetId: initial.asset_id ?? '',
+      _assetSearch: a.symbol ?? '',
+      _category: a.category ?? 'spot',
+      _coingeckoId: a.coingecko_id ?? '',
+      _symbol: a.symbol ?? '',
+      _name: a.name ?? '',
     }
-    return { ...EMPTY }
-  })
+  }
+  if (nlPrefill) {
+    // Normalize type
+    const rawType = (nlPrefill.type ?? 'buy').toLowerCase().replace(/\s+/g, '_')
+    const type = TX_TYPES.includes(rawType) ? rawType : 'buy'
+    // Normalize date
+    let date = EMPTY.date
+    if (nlPrefill.date) {
+      try {
+        const d = new Date(nlPrefill.date)
+        if (!isNaN(d)) date = d.toISOString().slice(0, 16)
+      } catch {}
+    }
+    const symbol = (nlPrefill.symbol ?? '').toUpperCase()
+    return {
+      ...EMPTY,
+      type,
+      qty: nlPrefill.qty != null ? String(nlPrefill.qty) : '',
+      price_usd: nlPrefill.price_usd != null ? String(nlPrefill.price_usd) : '',
+      fee_usd: nlPrefill.fee_usd != null ? String(nlPrefill.fee_usd) : '',
+      date,
+      notes: nlPrefill.notes ?? '',
+      _assetSearch: symbol,
+      _symbol: symbol,
+      _name: nlPrefill.name ?? '',
+    }
+  }
+  return { ...EMPTY }
+}
+
+export function TransactionForm({ portfolioId, initial, nlPrefill, onSave, onCancel }) {
+  const [form, setForm] = useState(() => buildInitial(initial, nlPrefill))
   const [assetResults, setAssetResults] = useState([])
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState(null)
+
+  // Auto-search asset when pre-filled from NL
+  useEffect(() => {
+    if (nlPrefill?.symbol && !form._assetId) {
+      const sym = nlPrefill.symbol.toUpperCase()
+      supabase.from('assets').select('*').ilike('symbol', sym).limit(5)
+        .then(({ data }) => setAssetResults(data ?? []))
+    }
+  }, [])
 
   useEffect(() => {
     const q = form._assetSearch.trim()
@@ -118,6 +155,12 @@ export function TransactionForm({ portfolioId, initial, onSave, onCancel }) {
 
   return (
     <form onSubmit={handleSubmit} className="space-y-4">
+      {nlPrefill && (
+        <div className="bg-accent/10 border border-accent/30 rounded px-3 py-2 text-xs text-accent">
+          Pre-filled by AI — review all fields before saving.
+        </div>
+      )}
+
       {/* Asset picker */}
       <div className="relative">
         <label className={labelCls}>Asset</label>

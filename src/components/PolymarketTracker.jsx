@@ -1,10 +1,5 @@
-import { useState, useEffect } from 'react'
-import { fetchPolymarketPositions } from '../lib/polymarketService'
+import { useState } from 'react'
 import { fmtUsd, fmtPct, pnlClass } from '../utils/format'
-
-function addrKey(portfolioId)        { return `pmkt_addresses_${portfolioId ?? 'global'}` }
-function consolidateKey(portfolioId)  { return `pmkt_consolidate_${portfolioId ?? 'global'}` }
-function pusdKey(portfolioId)         { return `pmkt_pusd_${portfolioId ?? 'global'}` }
 
 function AddressTag({ address, onRemove }) {
   const short = `${address.slice(0, 6)}…${address.slice(-4)}`
@@ -16,83 +11,23 @@ function AddressTag({ address, onRemove }) {
   )
 }
 
-export function PolymarketTracker({ portfolioId, portfolioName, onSummaryChange }) {
-  const [addresses, setAddresses] = useState(() => {
-    try { return JSON.parse(localStorage.getItem(addrKey(portfolioId)) ?? '[]') } catch { return [] }
-  })
-  const [input, setInput]         = useState('')
-  const [positions, setPositions] = useState([])
-  const [proxyWallets, setProxyWallets] = useState([])
-  const [loading, setLoading]     = useState(false)
-  const [error, setError]         = useState(null)
-  const [consolidate, setConsolidate] = useState(
-    () => localStorage.getItem(consolidateKey(portfolioId)) === 'true'
-  )
-  // PUSD = Polymarket available balance — locked in CTF Exchange, no public API
-  const [pusdInput, setPusdInput] = useState(
-    () => localStorage.getItem(pusdKey(portfolioId)) ?? ''
-  )
+export function PolymarketTracker({ portfolioId, portfolioName, pmkt }) {
+  const [input, setInput] = useState('')
   const [showDebug, setShowDebug] = useState(false)
 
-  const manualPusd = parseFloat(pusdInput) || 0
+  const {
+    addresses, addAddress, removeAddress,
+    open, positions, proxyWallets,
+    loading, error,
+    consolidate, setConsolidate,
+    pusdInput, setPusdInput, manualPusd,
+    positionsValue, totalValue, totalInvested, totalPnl,
+  } = pmkt
 
-  useEffect(() => {
-    try { setAddresses(JSON.parse(localStorage.getItem(addrKey(portfolioId)) ?? '[]')) }
-    catch { setAddresses([]) }
-    setConsolidate(localStorage.getItem(consolidateKey(portfolioId)) === 'true')
-    setPusdInput(localStorage.getItem(pusdKey(portfolioId)) ?? '')
-    setPositions([])
-    setProxyWallets([])
-    setError(null)
-  }, [portfolioId])
-
-  function saveAddresses(next) {
-    setAddresses(next)
-    localStorage.setItem(addrKey(portfolioId), JSON.stringify(next))
+  function handleAdd() {
+    const ok = addAddress(input)
+    if (ok) setInput('')
   }
-
-  function addAddress() {
-    const addr = input.trim()
-    if (!addr || addresses.includes(addr)) return
-    saveAddresses([...addresses, addr])
-    setInput('')
-  }
-
-  function removeAddress(addr) {
-    saveAddresses(addresses.filter(a => a !== addr))
-  }
-
-  function toggleConsolidate(val) {
-    setConsolidate(val)
-    localStorage.setItem(consolidateKey(portfolioId), String(val))
-  }
-
-  useEffect(() => {
-    if (!addresses.length) { setPositions([]); return }
-    setLoading(true); setError(null)
-    Promise.all(addresses.map(fetchPolymarketPositions))
-      .then(results => {
-        setPositions(results.flatMap(r => r.positions))
-        setProxyWallets(results.map(r => r.proxyWallet).filter(Boolean))
-      })
-      .catch(e => setError(e.message))
-      .finally(() => setLoading(false))
-  }, [addresses.join(',')])
-
-  const open = positions.filter(p => Number(p.size ?? 0) > 0 && !p.redeemed)
-
-  const positionsValue = open.reduce((s, p) => s + Number(p.currentValue ?? (Number(p.size) * Number(p.currentPrice ?? 0))), 0)
-  const totalValue     = positionsValue + manualPusd
-  // Cost basis = sum of initialValue (avgPrice × size) for all open positions
-  const totalInvested  = open.reduce((s, p) => s + Number(p.initialValue ?? (Number(p.size) * Number(p.avgPrice ?? 0))), 0)
-  const totalPnl       = totalValue - totalInvested
-
-  useEffect(() => {
-    onSummaryChange?.(consolidate && (open.length > 0 || manualPusd > 0)
-      ? { value: totalValue, invested: totalInvested }
-      : null
-    )
-  }, [consolidate, totalValue, totalInvested, open.length, manualPusd])
 
   return (
     <div className="space-y-4">
@@ -100,14 +35,15 @@ export function PolymarketTracker({ portfolioId, portfolioName, onSummaryChange 
       <div className="bg-surface-1 border border-border rounded-lg p-4">
         <div className="flex items-center justify-between mb-3">
           <p className="text-xs text-gray-500 uppercase tracking-wider">
-            Wallet Addresses{portfolioName ? <span className="normal-case text-gray-600"> · {portfolioName}</span> : ''}
+            Wallet Addresses
+            {portfolioName && <span className="normal-case text-gray-600"> · {portfolioName}</span>}
           </p>
           {portfolioId && open.length > 0 && (
             <label className="flex items-center gap-2 text-xs text-gray-400 cursor-pointer select-none">
               <input
                 type="checkbox"
                 checked={consolidate}
-                onChange={e => toggleConsolidate(e.target.checked)}
+                onChange={e => setConsolidate(e.target.checked)}
                 className="accent-accent"
               />
               Include in Dashboard
@@ -126,28 +62,24 @@ export function PolymarketTracker({ portfolioId, portfolioName, onSummaryChange 
           <input
             value={input}
             onChange={e => setInput(e.target.value)}
-            onKeyDown={e => e.key === 'Enter' && addAddress()}
+            onKeyDown={e => e.key === 'Enter' && handleAdd()}
             placeholder="0x… wallet address"
             className="flex-1 bg-surface border border-border rounded px-3 py-1.5 text-sm text-gray-200 placeholder-gray-600 focus:outline-none focus:border-accent"
           />
           <button
-            onClick={addAddress}
+            onClick={handleAdd}
             className="px-3 py-1.5 text-sm rounded border border-border hover:border-accent hover:text-accent transition-colors"
           >
             Add
           </button>
         </div>
 
-        {/* PUSD: Polymarket available balance sits in CTF Exchange contract — no public API */}
         <div className="flex items-center gap-2 mt-3 pt-3 border-t border-border">
           <label className="text-xs text-gray-500 whitespace-nowrap">PUSD balance</label>
           <input
             type="number" min="0" step="0.01"
             value={pusdInput}
-            onChange={e => {
-              setPusdInput(e.target.value)
-              localStorage.setItem(pusdKey(portfolioId), e.target.value)
-            }}
+            onChange={e => setPusdInput(e.target.value)}
             placeholder="0.00"
             className="w-32 bg-surface border border-border rounded px-2 py-1 text-sm text-gray-200 placeholder-gray-600 focus:outline-none focus:border-accent"
           />
@@ -163,7 +95,6 @@ export function PolymarketTracker({ portfolioId, portfolioName, onSummaryChange 
 
       {!loading && !error && addresses.length > 0 && (
         <>
-          {/* Summary */}
           <div className="grid grid-cols-3 gap-3">
             <div className="bg-surface-1 border border-border rounded-lg px-4 py-3">
               <p className="text-xs text-gray-500 mb-0.5">Current Value</p>
@@ -184,7 +115,6 @@ export function PolymarketTracker({ portfolioId, portfolioName, onSummaryChange 
             </div>
           </div>
 
-          {/* Debug panel */}
           <div className="bg-surface-1 border border-border rounded-lg p-3">
             <button
               onClick={() => setShowDebug(v => !v)}
@@ -227,7 +157,7 @@ export function PolymarketTracker({ portfolioId, portfolioName, onSummaryChange 
                 </thead>
                 <tbody className="divide-y divide-border">
                   {open.map((p, i) => {
-                    const invested = Number(p.initialValue ?? (Number(p.size) * Number(p.avgPrice ?? 0)))
+                    const invested = Number(p.size) * Number(p.avgPrice ?? 0)
                     const value    = Number(p.currentValue ?? (Number(p.size) * Number(p.currentPrice ?? 0)))
                     const pnl      = value - invested
                     const pct      = invested > 0 ? (pnl / invested) * 100 : null
