@@ -58,8 +58,9 @@ function BulkReview({ rows, onConfirm, onBack, saving }) {
               <th className="px-3 py-2 text-left">Asset</th>
               <th className="px-3 py-2 text-left">Type</th>
               <th className="px-3 py-2 text-right">Qty</th>
-              <th className="px-3 py-2 text-right">Price</th>
+              <th className="px-3 py-2 text-right hidden sm:table-cell">Price</th>
               <th className="px-3 py-2 text-right hidden sm:table-cell">Date</th>
+              <th className="px-3 py-2 text-left">Notes</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-border">
@@ -83,11 +84,14 @@ function BulkReview({ rows, onConfirm, onBack, saving }) {
                   {(tx.type ?? '').replace('_', ' ')}
                 </td>
                 <td className="px-3 py-2 text-right text-gray-300 num">{Number(tx.qty ?? 0).toLocaleString()}</td>
-                <td className="px-3 py-2 text-right text-gray-400 num">
+                <td className="px-3 py-2 text-right text-gray-400 num hidden sm:table-cell">
                   {tx.price_usd > 0 ? fmtUsd(tx.price_usd) : '—'}
                 </td>
                 <td className="px-3 py-2 text-right text-gray-500 hidden sm:table-cell">
                   {tx.date ? tx.date.slice(0, 10) : '—'}
+                </td>
+                <td className="px-3 py-2 text-gray-500 max-w-[180px]">
+                  <span className="line-clamp-1 text-xs" title={tx.notes ?? ''}>{tx.notes || '—'}</span>
                 </td>
               </tr>
             ))}
