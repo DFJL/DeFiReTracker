@@ -5,6 +5,75 @@ import { fmtUsd } from '../utils/format'
 const ACCEPTED_TYPES = ['image/jpeg', 'image/png', 'image/webp', 'image/gif']
 const MAX_BYTES = 4.5 * 1024 * 1024 // 4.5 MB — Anthropic limit
 
+// ── CoinGecko deterministic parser ──────────────────────────────────────────
+const CG_TYPE_MAP = { 'Buy':'buy', 'Sell':'sell', 'Transfer In':'transfer_in', 'Transfer Out':'transfer_out', 'Earn':'earn' }
+const CG_TX_TYPES = new Set(Object.keys(CG_TYPE_MAP))
+const CG_STABLES  = new Set(['USDC','USDT','PYUSD','DAI','BUSD','TUSD','FDUSD','USDS','USDP'])
+const CG_MONTHS   = { Jan:'01',Feb:'02',Mar:'03',Apr:'04',May:'05',Jun:'06',Jul:'07',Aug:'08',Sep:'09',Oct:'10',Nov:'11',Dec:'12' }
+
+function cgParseDate(s) {
+  const m = s.match(/(\d{1,2})\s+(\w{3})\s+(\d{4}),\s*(\d{1,2}):(\d{2})\s*(AM|PM)/i)
+  if (!m) return null
+  const [, d, mon, yr, hr, min, ap] = m
+  let h = parseInt(hr)
+  if (ap.toUpperCase() === 'PM' && h !== 12) h += 12
+  if (ap.toUpperCase() === 'AM' && h === 12) h = 0
+  return `${yr}-${CG_MONTHS[mon]||'01'}-${d.padStart(2,'0')}T${String(h).padStart(2,'0')}:${min}`
+}
+function cgParseNum(s) {
+  const m = s.match(/[+-]?\$?([\d,]+\.?\d*)/)
+  return m ? parseFloat(m[1].replace(/,/g,'')) : 0
+}
+function cgIsTxLine(s) { return CG_TX_TYPES.has(s) || s.startsWith('Showing ') }
+
+function parseCoinGeckoText(raw) {
+  const lines = raw.split(/\r?\n/).map(l => l.trim()).filter(Boolean)
+  if (!lines.some(l => CG_TX_TYPES.has(l))) return null
+
+  // Extract symbol (first standalone all-caps 2–8 char token)
+  let symbol = '', name = ''
+  for (let i = 0; i < Math.min(20, lines.length); i++) {
+    if (/^[A-Z]{2,8}$/.test(lines[i])) {
+      symbol = lines[i]
+      const prev = lines[i - 1] || ''
+      if (prev && !/logo/i.test(prev) && !/^\$/.test(prev)) name = prev
+      break
+    }
+  }
+  if (!symbol) return null
+
+  const isStable = CG_STABLES.has(symbol)
+  const txs = []
+
+  // Advance to first transaction type line
+  let i = 0
+  while (i < lines.length && !CG_TX_TYPES.has(lines[i])) i++
+
+  while (i < lines.length) {
+    const txType = CG_TYPE_MAP[lines[i]]
+    if (!txType) { i++; continue }
+    if (i + 7 >= lines.length) break
+
+    // lines: i=type, i+1=price, i+2=qty, i+3=date, i+4=fees, i+5=cost, i+6=proceeds, i+7=pnl, i+8=notes?
+    const maybeNotes = lines[i + 8] ?? ''
+    const hasNotes   = !!maybeNotes && !cgIsTxLine(maybeNotes)
+    const notes      = hasNotes ? maybeNotes : ''
+
+    let price = cgParseNum(lines[i + 1])
+    if (price === 0 && isStable) price = 1
+    const qty  = cgParseNum(lines[i + 2])
+    const date = cgParseDate(lines[i + 3])
+    const fee  = cgParseNum(lines[i + 4])
+
+    if (qty > 0 && date) {
+      txs.push({ symbol, name, type: txType, qty, price_usd: price, fee_usd: fee, date, notes })
+    }
+    i += hasNotes ? 9 : 8
+  }
+  return txs.length > 0 ? txs : null
+}
+// ────────────────────────────────────────────────────────────────────────────
+
 function toBase64(file) {
   return new Promise((resolve, reject) => {
     const reader = new FileReader()
@@ -159,8 +228,20 @@ export function NLTransactionModal({ portfolioId, onParsedSingle, onBulkSave, on
 
   async function handleParse() {
     if (!text.trim() && !image) return
-    setLoading(true)
     setError(null)
+
+    // Try deterministic CoinGecko parser first — instant, no token limits
+    if (text.trim() && !image) {
+      const cgTxs = parseCoinGeckoText(text.trim())
+      if (cgTxs) {
+        if (cgTxs.length === 1) { onParsedSingle(cgTxs[0]) }
+        else { setParsed(cgTxs) }
+        return
+      }
+    }
+
+    // Fall back to AI for freeform text or images
+    setLoading(true)
     try {
       const body = {
         mode: 'parse-transaction',
@@ -172,7 +253,6 @@ export function NLTransactionModal({ portfolioId, onParsedSingle, onBulkSave, on
       if (fnErr) throw new Error(fnErr.message)
       if (data?.error) throw new Error(data.error)
 
-      // Parse the result — always expect a JSON array
       let txs
       try {
         const raw = (data.result ?? '').trim()
@@ -188,7 +268,6 @@ export function NLTransactionModal({ portfolioId, onParsedSingle, onBulkSave, on
       if (txs.length === 0) throw new Error('No transactions found. Try a different image or description.')
 
       if (txs.length === 1 && !image) {
-        // Single text-parsed tx → pre-fill form as before
         onParsedSingle(txs[0])
       } else {
         setParsed(txs)
