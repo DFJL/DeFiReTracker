@@ -1,5 +1,6 @@
 import { useState, useRef, useCallback } from 'react'
 import { supabase } from '../lib/supabase'
+import { lookupCoinGeckoId } from '../lib/priceService'
 import { fmtUsd } from '../utils/format'
 
 const ACCEPTED_TYPES = ['image/jpeg', 'image/png', 'image/webp', 'image/gif']
@@ -314,13 +315,20 @@ export function NLTransactionModal({ portfolioId, onParsedSingle, onBulkSave, on
       // Step 2: create any missing assets
       const missing = uniqueSymbols.filter(s => !assetMap.has(s))
       if (missing.length) {
-        setSaveStatus({ label: `Creating ${missing.length} new asset${missing.length > 1 ? 's' : ''}…`, pct: 30 })
+        setSaveStatus({ label: `Looking up ${missing.length} new asset${missing.length > 1 ? 's' : ''}…`, pct: 25 })
+        // Resolve coingecko IDs in parallel via CoinGecko search
+        const lookups = await Promise.all(missing.map(sym => lookupCoinGeckoId(sym)))
+        const cgMap = Object.fromEntries(missing.map((sym, i) => [sym, lookups[i]]))
+
+        setSaveStatus({ label: `Creating ${missing.length} new asset${missing.length > 1 ? 's' : ''}…`, pct: 35 })
         for (const sym of missing) {
           const txForSym = selectedTxs.find(tx => (tx.symbol ?? '').toUpperCase() === sym)
-          const name = txForSym?.name || sym
+          const cg = cgMap[sym]
+          const coingecko_id = cg?.id ?? sym.toLowerCase()
+          const name = cg?.name || txForSym?.name || sym
           const { data: inserted, error: insertErr } = await supabase
             .from('assets')
-            .insert({ symbol: sym, name, category: 'spot', coingecko_id: sym.toLowerCase() })
+            .insert({ symbol: sym, name, category: 'spot', coingecko_id })
             .select('id')
             .single()
           if (inserted?.id) {

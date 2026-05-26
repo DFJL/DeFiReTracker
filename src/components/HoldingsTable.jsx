@@ -32,13 +32,14 @@ function ColHeader({ label, col, sort, onSort, className = '' }) {
   )
 }
 
-export function HoldingsTable({ transactions, assets, prices, changes, pmktPositions = [], onUpdateAsset }) {
+export function HoldingsTable({ transactions, assets, prices, changes, pmktPositions = [], onUpdateAsset, onAutoFix }) {
   const [sort, setSort]         = useState({ col: 'value', dir: 'desc' })
   const [search, setSearch]     = useState('')
   const [catFilter, setCatFilter] = useState('')
   const [editingId, setEditingId] = useState(null)
   const [editDraft, setEditDraft] = useState({})
   const [editSaving, setEditSaving] = useState(false)
+  const [autoFixing, setAutoFixing] = useState(false)
 
   function handleSort(col) {
     setSort(s => s.col === col ? { col, dir: s.dir === 'asc' ? 'desc' : 'asc' } : { col, dir: 'desc' })
@@ -55,6 +56,13 @@ export function HoldingsTable({ transactions, assets, prices, changes, pmktPosit
     await onUpdateAsset(editingId, editDraft)
     setEditSaving(false)
     setEditingId(null)
+  }
+
+  async function handleAutoFix() {
+    if (!onAutoFix) return
+    setAutoFixing(true)
+    await onAutoFix()
+    setAutoFixing(false)
   }
 
   const allRows = useMemo(() => {
@@ -117,8 +125,26 @@ export function HoldingsTable({ transactions, assets, prices, changes, pmktPosit
     </div>
   )
 
+  const unlinkedAssets = allRows.filter(r => r.currentPrice == null && r.qty > 0)
+
   return (
     <div className="space-y-4">
+      {/* Auto-fix banner */}
+      {unlinkedAssets.length > 0 && onAutoFix && (
+        <div className="flex items-center justify-between bg-yellow-900/20 border border-yellow-800/40 rounded-lg px-4 py-2.5 gap-3">
+          <p className="text-xs text-yellow-300">
+            {unlinkedAssets.length} asset{unlinkedAssets.length > 1 ? 's' : ''} ({unlinkedAssets.map(r => r.symbol).join(', ')}) missing price data — CoinGecko IDs may be incorrect.
+          </p>
+          <button
+            onClick={handleAutoFix}
+            disabled={autoFixing}
+            className="flex-shrink-0 text-xs px-3 py-1.5 bg-yellow-700/50 hover:bg-yellow-700 text-yellow-200 rounded transition-colors disabled:opacity-50"
+          >
+            {autoFixing ? 'Fixing…' : 'Auto-fix'}
+          </button>
+        </div>
+      )}
+
       {/* Filter bar */}
       {allRows.length > 0 && (
         <div className="flex gap-2 flex-wrap items-center">
