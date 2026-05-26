@@ -24,6 +24,7 @@ export function PolymarketTracker({ portfolioId, portfolioName, onSummaryChange 
   const [positions, setPositions] = useState([])
   const [netDeposited, setNetDeposited] = useState(null)
   const [proxyWallets, setProxyWallets] = useState([])
+  const [extraDebug, setExtraDebug] = useState(null)
   const [loading, setLoading]     = useState(false)
   const [error, setError]         = useState(null)
   const [consolidate, setConsolidate] = useState(
@@ -78,6 +79,8 @@ export function PolymarketTracker({ portfolioId, portfolioName, onSummaryChange 
         const totalDeposited = results.reduce((s, r) => s + r.netDeposited, 0)
         setNetDeposited(totalDeposited > 0 ? totalDeposited : null)
         setProxyWallets(results.map(r => r.proxyWallet).filter(Boolean))
+        // collect debug from first result only
+        if (results[0]?._debug) setExtraDebug(results[0]._debug)
       })
       .catch(e => setError(e.message))
       .finally(() => setLoading(false))
@@ -210,6 +213,7 @@ export function PolymarketTracker({ portfolioId, portfolioName, onSummaryChange 
                 {JSON.stringify({
                   netDeposited,
                   proxyWallets,
+                  _debug: extraDebug,
                   sample: positions.slice(0, 3).map(p => ({
                     size: p.size, avgPrice: p.avgPrice, currentPrice: p.currentPrice,
                     initialValue: p.initialValue, currentValue: p.currentValue,
