@@ -13,6 +13,7 @@ export function useTransactions(portfolioId) {
       .select('*, asset:assets(*)')
       .eq('portfolio_id', portfolioId)
       .order('date', { ascending: false })
+      .limit(10000)
     setTransactions(data ?? [])
     setLoading(false)
   }, [portfolioId])
