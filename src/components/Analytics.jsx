@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react'
 import { computeAssetPnl } from '../utils/pnl'
-import { fmtUsd, fmtPct, pnlClass } from '../utils/format'
+import { fmtUsd, fmtPct, fmtQty, pnlClass } from '../utils/format'
 
 // ── Classification regexes ──────────────────────────────────────────────────
 const LP_RX      = /lps?\b|liquidity|pool|\bfee(s)?\b|\bdif\b/i
@@ -152,6 +152,81 @@ function computeMonthly(transactions, prices) {
   }
 
   return Object.values(months)
+}
+
+function computeAirdropGroups(transactions, prices) {
+  const airdropTxs = transactions.filter(tx => classifyTx(tx) === 'airdrop')
+  if (!airdropTxs.length) return []
+
+  const byAsset = new Map()
+  for (const tx of airdropTxs) {
+    const aid = tx.asset_id
+    if (!byAsset.has(aid)) byAsset.set(aid, { asset: tx.asset, txs: [] })
+    byAsset.get(aid).txs.push(tx)
+  }
+
+  return [...byAsset.values()].map(({ asset, txs }) => {
+    const cgId         = asset?.coingecko_id
+    const currentPrice = prices[cgId] ?? null
+    const totalQty     = txs.reduce((s, t) => s + Number(t.qty), 0)
+    const rcvdValue    = txs.reduce((s, t) => s + Number(t.qty) * Number(t.price_usd), 0)
+    const currentValue = currentPrice != null ? totalQty * currentPrice : null
+    const gain         = currentValue != null ? currentValue - rcvdValue : null
+
+    // Current holdings across ALL transactions for this asset
+    const allTxs = transactions.filter(t => t.asset_id === asset?.id)
+    let heldQty  = 0
+    for (const t of [...allTxs].sort((a, b) => new Date(a.date) - new Date(b.date))) {
+      const q = Number(t.qty)
+      if (t.type === 'buy' || t.type === 'transfer_in' || t.type === 'earn') heldQty += q
+      else if (t.type === 'sell' || t.type === 'transfer_out') heldQty -= q
+    }
+    heldQty = Math.max(0, heldQty)
+
+    // Holding status relative to airdrop qty
+    const status = heldQty >= totalQty * 0.99 ? 'holding'
+                 : heldQty > 0               ? 'partial'
+                 :                             'sold'
+
+    // Opportunity cost / exit quality for sold/partial
+    let exitNote = null
+    const sells = allTxs.filter(t => t.type === 'sell')
+    if (sells.length && currentPrice != null) {
+      const totalSoldQty   = sells.reduce((s, t) => s + Number(t.qty), 0)
+      const avgSellPrice   = sells.reduce((s, t) => s + Number(t.price_usd) * Number(t.qty), 0) / totalSoldQty
+      const airdropSoldQty = Math.min(totalQty - heldQty, totalSoldQty)
+      if (airdropSoldQty > 0) {
+        const lockedIn   = airdropSoldQty * avgSellPrice
+        const wouldBe    = airdropSoldQty * currentPrice
+        const delta      = lockedIn - wouldBe     // positive = good exit
+        exitNote = { avgSellPrice, airdropSoldQty, lockedIn, wouldBe, delta }
+      }
+    }
+
+    const dates     = txs.map(t => new Date(t.date)).sort((a, b) => a - b)
+    const firstDate = dates[0]
+    const lastDate  = dates[dates.length - 1]
+    const notesTags = [...new Set(txs.map(t => t.notes).filter(Boolean))]
+
+    return {
+      assetId: asset?.id,
+      symbol:  asset?.symbol ?? '?',
+      name:    asset?.name   ?? '?',
+      cgId,
+      currentPrice,
+      totalQty,
+      rcvdValue,
+      currentValue,
+      gain,
+      heldQty,
+      status,
+      exitNote,
+      dropCount: txs.length,
+      firstDate,
+      lastDate,
+      notesTags,
+    }
+  }).sort((a, b) => (b.currentValue ?? 0) - (a.currentValue ?? 0))
 }
 
 // ── SVG components ──────────────────────────────────────────────────────────
@@ -350,6 +425,9 @@ export function Analytics({ transactions, assets, prices, changes, marketData = 
   const breakdown = useMemo(() => computeBreakdown(transactions, assets, prices, since), [transactions, assets, prices, since])
   const monthly   = useMemo(() => computeMonthly(transactions, prices), [transactions, prices])
 
+  // Airdrops
+  const airdropGroups = useMemo(() => computeAirdropGroups(transactions, prices), [transactions, prices])
+
   const totalPositive = CATS.reduce((s, c) => s + Math.max(0, breakdown[c.key] ?? 0), 0)
   const donutItems    = CATS.map(c => ({ ...c, value: Math.max(0, breakdown[c.key] ?? 0) }))
 
@@ -495,6 +573,190 @@ export function Analytics({ transactions, assets, prices, changes, marketData = 
           <MonthlyBarChart data={monthly} />
         </div>
       </section>
+
+      {/* ── Airdrops ─────────────────────────────────────────────────── */}
+      {airdropGroups.length > 0 && (() => {
+        const totalValue    = airdropGroups.reduce((s, g) => s + (g.currentValue ?? 0), 0)
+        const totalGain     = airdropGroups.reduce((s, g) => s + (g.gain ?? 0), 0)
+        const totalEvents   = airdropGroups.reduce((s, g) => s + g.dropCount, 0)
+        const best          = airdropGroups[0]
+        const missed        = airdropGroups.filter(g => g.exitNote && g.exitNote.delta < 0)
+        const goodExits     = airdropGroups.filter(g => g.exitNote && g.exitNote.delta > 0)
+
+        const STATUS_BADGE = {
+          holding: 'bg-green-500/15 text-green-400 border border-green-500/20',
+          partial: 'bg-yellow-500/15 text-yellow-400 border border-yellow-500/20',
+          sold:    'bg-gray-500/15 text-gray-400 border border-gray-500/20',
+        }
+        const STATUS_LABEL = { holding: 'Holding', partial: 'Partial', sold: 'Sold' }
+
+        return (
+          <section className="space-y-3">
+            <h2 className="text-sm font-semibold text-gray-300 uppercase tracking-wider">Airdrops Received</h2>
+
+            {/* Summary cards */}
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+              {[
+                { label: 'Drop Events',   value: totalEvents,               fmt: n => n.toString(),  cls: 'text-gray-100' },
+                { label: 'Unique Tokens', value: airdropGroups.length,      fmt: n => n.toString(),  cls: 'text-gray-100' },
+                { label: 'Current Value', value: totalValue,                fmt: fmtUsd,             cls: 'text-green-400' },
+                { label: 'Free Gain',     value: totalGain,                 fmt: fmtUsd,             cls: pnlClass(totalGain) },
+              ].map(({ label, value, fmt, cls }) => (
+                <div key={label} className="bg-surface-1 border border-border rounded-lg px-4 py-3">
+                  <div className={`text-lg font-semibold ${cls}`}>{fmt(value)}</div>
+                  <div className="text-xs text-gray-500 mt-0.5">{label}</div>
+                </div>
+              ))}
+            </div>
+
+            {/* Highlight callout */}
+            {best.currentValue != null && best.currentValue > 0 && (
+              <div className="bg-violet-500/10 border border-violet-500/25 rounded-lg px-4 py-3 flex flex-wrap gap-x-6 gap-y-1 items-center">
+                <div className="text-xs text-violet-300 font-semibold uppercase tracking-wider flex-shrink-0">
+                  Best drop
+                </div>
+                <div className="text-sm text-gray-100 flex items-center gap-2">
+                  <span className="font-bold">{best.symbol}</span>
+                  <span className="text-gray-400">·</span>
+                  <span className="text-green-400 font-semibold">{fmtUsd(best.currentValue)}</span>
+                  <span className="text-gray-500 text-xs">current value from {fmtQty(best.totalQty)} tokens received free</span>
+                </div>
+                {missed.length > 0 && (
+                  <>
+                    <div className="text-xs text-red-400 font-semibold uppercase tracking-wider flex-shrink-0">
+                      Sold low
+                    </div>
+                    <div className="text-sm text-gray-300 flex items-center gap-1.5 flex-wrap">
+                      {missed.slice(0, 2).map(g => (
+                        <span key={g.assetId} className="flex items-center gap-1">
+                          <span className="font-medium text-red-400">{g.symbol}</span>
+                          <span className="text-xs text-gray-500">({fmtUsd(Math.abs(g.exitNote.delta))} left on table)</span>
+                        </span>
+                      ))}
+                    </div>
+                  </>
+                )}
+                {goodExits.length > 0 && missed.length === 0 && (
+                  <>
+                    <div className="text-xs text-green-400 font-semibold uppercase tracking-wider flex-shrink-0">
+                      Good exits
+                    </div>
+                    <div className="text-sm text-gray-300">
+                      {goodExits.slice(0, 2).map(g => (
+                        <span key={g.assetId} className="mr-3">
+                          <span className="font-medium text-green-400">{g.symbol}</span>
+                          <span className="text-xs text-gray-500 ml-1">(+{fmtUsd(g.exitNote.delta)} vs holding)</span>
+                        </span>
+                      ))}
+                    </div>
+                  </>
+                )}
+              </div>
+            )}
+
+            {/* Airdrop table */}
+            <div className="bg-surface-1 border border-border rounded-lg overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="border-b border-border text-xs text-gray-500 uppercase tracking-wider">
+                    <th className="px-4 py-3 text-left">Asset</th>
+                    <th className="px-4 py-3 text-center hidden sm:table-cell">Events</th>
+                    <th className="px-4 py-3 text-right hidden md:table-cell">Qty Rcv'd</th>
+                    <th className="px-4 py-3 text-right hidden lg:table-cell">Rcv'd Value</th>
+                    <th className="px-4 py-3 text-right hidden md:table-cell">Price Now</th>
+                    <th className="px-4 py-3 text-right">Current Value</th>
+                    <th className="px-4 py-3 text-right hidden sm:table-cell">Free Gain</th>
+                    <th className="px-4 py-3 text-center hidden sm:table-cell">Status</th>
+                    <th className="px-4 py-3 text-right hidden lg:table-cell">First Drop</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-border">
+                  {airdropGroups.map(g => {
+                    const md = marketData[g.cgId]
+                    const isUp = (md?.change24h ?? 0) >= 0
+                    return (
+                      <tr key={g.assetId} className="hover:bg-surface-2 transition-colors">
+                        <td className="px-4 py-3">
+                          <div className="flex items-center gap-2">
+                            <div>
+                              <div className="font-semibold text-gray-100">{g.symbol}</div>
+                              <div className="text-xs text-gray-500">{g.name}</div>
+                            </div>
+                            {md?.sparkline && (
+                              <MiniSparkline data={md.sparkline} up={isUp} w={48} h={18} />
+                            )}
+                          </div>
+                          {/* Notes tags */}
+                          {g.notesTags.length > 0 && (
+                            <div className="flex flex-wrap gap-1 mt-1">
+                              {g.notesTags.slice(0, 2).map(n => (
+                                <span key={n} className="text-[10px] px-1.5 py-0.5 rounded bg-surface-3 text-gray-500 max-w-[120px] truncate">
+                                  {n}
+                                </span>
+                              ))}
+                            </div>
+                          )}
+                        </td>
+                        <td className="px-4 py-3 text-center hidden sm:table-cell">
+                          <span className="text-xs bg-violet-500/15 text-violet-400 px-2 py-0.5 rounded-full border border-violet-500/20">
+                            ×{g.dropCount}
+                          </span>
+                        </td>
+                        <td className="px-4 py-3 text-right num text-gray-300 hidden md:table-cell">
+                          {fmtQty(g.totalQty)}
+                        </td>
+                        <td className="px-4 py-3 text-right num hidden lg:table-cell">
+                          {g.rcvdValue > 0
+                            ? <span className="text-gray-400">{fmtUsd(g.rcvdValue)}</span>
+                            : <span className="text-violet-400 font-medium text-xs">FREE</span>}
+                        </td>
+                        <td className="px-4 py-3 text-right num text-gray-300 hidden md:table-cell">
+                          {g.currentPrice != null ? (
+                            <div>
+                              <div>{fmtUsd(g.currentPrice)}</div>
+                              {md?.change24h != null && (
+                                <div className={`text-xs ${pnlClass(md.change24h)}`}>{fmtPct(md.change24h)}</div>
+                              )}
+                            </div>
+                          ) : <span className="text-gray-600">—</span>}
+                        </td>
+                        <td className="px-4 py-3 text-right num">
+                          {g.currentValue != null
+                            ? <span className="font-semibold text-gray-100">{fmtUsd(g.currentValue)}</span>
+                            : <span className="text-gray-600">—</span>}
+                        </td>
+                        <td className="px-4 py-3 text-right num hidden sm:table-cell">
+                          {g.gain != null ? (
+                            <div>
+                              <div className={pnlClass(g.gain)}>{fmtUsd(g.gain)}</div>
+                              {/* Exit quality note */}
+                              {g.exitNote && (
+                                <div className={`text-[10px] mt-0.5 ${g.exitNote.delta > 0 ? 'text-green-600' : 'text-red-500'}`}>
+                                  {g.exitNote.delta > 0
+                                    ? `+${fmtUsd(g.exitNote.delta)} vs hold`
+                                    : `${fmtUsd(g.exitNote.delta)} vs hold`}
+                                </div>
+                              )}
+                            </div>
+                          ) : <span className="text-gray-600">—</span>}
+                        </td>
+                        <td className="px-4 py-3 text-center hidden sm:table-cell">
+                          <span className={`text-xs px-2 py-0.5 rounded-full ${STATUS_BADGE[g.status]}`}>
+                            {STATUS_LABEL[g.status]}
+                          </span>
+                        </td>
+                        <td className="px-4 py-3 text-right text-xs text-gray-500 hidden lg:table-cell whitespace-nowrap">
+                          {g.firstDate?.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
+                        </td>
+                      </tr>
+                    )
+                  })}
+                </tbody>
+              </table>
+            </div>
+          </section>
+        )
+      })()}
 
       {/* ── Asset insights summary ───────────────────────────────────── */}
       <section className="space-y-3">
