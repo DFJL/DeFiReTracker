@@ -15,6 +15,28 @@ const CHAIN_BADGE = {
   polygon:  'bg-violet-900/40 text-violet-400',
 }
 const CATEGORIES = ['spot', 'stablecoin', 'defi', 'rwa']
+const PERIODS = ['1H', '24H', '7D', '30D']
+
+function Sparkline({ data, width = 80, height = 28 }) {
+  if (!data?.length || data.length < 2) return <span className="text-gray-700 text-xs">—</span>
+  const step = Math.max(1, Math.floor(data.length / 40))
+  const pts = data.filter((_, i) => i % step === 0 || i === data.length - 1)
+  const min = Math.min(...pts)
+  const max = Math.max(...pts)
+  const range = max - min || 1
+  const pad = 2
+  const coords = pts.map((p, i) => [
+    pad + (i / (pts.length - 1)) * (width - pad * 2),
+    pad + (height - pad * 2) - ((p - min) / range) * (height - pad * 2),
+  ])
+  const d = coords.map(([x, y], i) => `${i === 0 ? 'M' : 'L'}${x.toFixed(1)},${y.toFixed(1)}`).join(' ')
+  const isUp = pts[pts.length - 1] >= pts[0]
+  return (
+    <svg width={width} height={height} viewBox={`0 0 ${width} ${height}`}>
+      <path d={d} fill="none" stroke={isUp ? '#22c55e' : '#ef4444'} strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  )
+}
 
 function SortIcon({ active, dir }) {
   if (!active) return <span className="text-gray-700 ml-0.5">⇅</span>
@@ -32,10 +54,11 @@ function ColHeader({ label, col, sort, onSort, className = '' }) {
   )
 }
 
-export function HoldingsTable({ transactions, assets, prices, changes, pmktPositions = [], onUpdateAsset, onAutoFix }) {
-  const [sort, setSort]         = useState({ col: 'value', dir: 'desc' })
-  const [search, setSearch]     = useState('')
+export function HoldingsTable({ transactions, assets, prices, changes, marketData = {}, pmktPositions = [], onUpdateAsset, onAutoFix }) {
+  const [sort, setSort]           = useState({ col: 'value', dir: 'desc' })
+  const [search, setSearch]       = useState('')
   const [catFilter, setCatFilter] = useState('')
+  const [changePeriod, setChangePeriod] = useState('24H')
   const [editingId, setEditingId] = useState(null)
   const [editDraft, setEditDraft] = useState({})
   const [editSaving, setEditSaving] = useState(false)
@@ -65,6 +88,13 @@ export function HoldingsTable({ transactions, assets, prices, changes, pmktPosit
     setAutoFixing(false)
   }
 
+  function getChange(cgId) {
+    const md = marketData[cgId]
+    if (!md) return changes[cgId] ?? null
+    const key = { '1H': 'change1h', '24H': 'change24h', '7D': 'change7d', '30D': 'change30d' }[changePeriod]
+    return md[key] ?? null
+  }
+
   const allRows = useMemo(() => {
     return assets
       .map(asset => {
@@ -73,11 +103,10 @@ export function HoldingsTable({ transactions, assets, prices, changes, pmktPosit
         const price = prices[asset.coingecko_id]
         const pnl = computeAssetPnl(txs, price)
         if (pnl.qty <= 0 && pnl.realizedPnl === 0) return null
-        const change24h = changes[asset.coingecko_id] ?? null
-        return { ...asset, ...pnl, currentPrice: price ?? null, change24h }
+        return { ...asset, ...pnl, currentPrice: price ?? null }
       })
       .filter(Boolean)
-  }, [transactions, assets, prices, changes])
+  }, [transactions, assets, prices])
 
   const rows = useMemo(() => {
     let r = allRows
@@ -86,12 +115,11 @@ export function HoldingsTable({ transactions, assets, prices, changes, pmktPosit
       r = r.filter(row => row.symbol?.toLowerCase().includes(q) || row.name?.toLowerCase().includes(q))
     }
     if (catFilter) r = r.filter(row => row.category === catFilter)
-
     return [...r].sort((a, b) => {
       let va, vb
       if (sort.col === 'asset')      { va = a.symbol ?? ''; vb = b.symbol ?? '' }
       if (sort.col === 'price')      { va = a.currentPrice ?? 0; vb = b.currentPrice ?? 0 }
-      if (sort.col === '24h')        { va = a.change24h ?? -Infinity; vb = b.change24h ?? -Infinity }
+      if (sort.col === 'change')     { va = getChange(a.coingecko_id) ?? -Infinity; vb = getChange(b.coingecko_id) ?? -Infinity }
       if (sort.col === 'value')      { va = a.currentValue ?? 0; vb = b.currentValue ?? 0 }
       if (sort.col === 'unrealized') { va = a.unrealizedPnl ?? -Infinity; vb = b.unrealizedPnl ?? -Infinity }
       if (sort.col === 'realized')   { va = a.realizedPnl ?? 0; vb = b.realizedPnl ?? 0 }
@@ -100,7 +128,7 @@ export function HoldingsTable({ transactions, assets, prices, changes, pmktPosit
       if (va > vb) return sort.dir === 'asc' ? 1 : -1
       return 0
     })
-  }, [allRows, search, catFilter, sort])
+  }, [allRows, search, catFilter, sort, changePeriod, marketData, changes])
 
   const pmktRows = useMemo(() => {
     return pmktPositions.map((p, i) => {
@@ -117,6 +145,7 @@ export function HoldingsTable({ transactions, assets, prices, changes, pmktPosit
     })
   }, [pmktPositions])
 
+  const unlinkedAssets = allRows.filter(r => r.currentPrice == null && r.qty > 0)
   const hasAny = allRows.length > 0 || pmktRows.length > 0
 
   if (!hasAny) return (
@@ -125,15 +154,13 @@ export function HoldingsTable({ transactions, assets, prices, changes, pmktPosit
     </div>
   )
 
-  const unlinkedAssets = allRows.filter(r => r.currentPrice == null && r.qty > 0)
-
   return (
     <div className="space-y-4">
       {/* Auto-fix banner */}
       {unlinkedAssets.length > 0 && onAutoFix && (
         <div className="flex items-center justify-between bg-yellow-900/20 border border-yellow-800/40 rounded-lg px-4 py-2.5 gap-3">
           <p className="text-xs text-yellow-300">
-            {unlinkedAssets.length} asset{unlinkedAssets.length > 1 ? 's' : ''} ({unlinkedAssets.map(r => r.symbol).join(', ')}) missing price data — CoinGecko IDs may be incorrect.
+            {unlinkedAssets.length} asset{unlinkedAssets.length > 1 ? 's' : ''} ({unlinkedAssets.map(r => r.symbol).join(', ')}) missing price data.
           </p>
           <button
             onClick={handleAutoFix}
@@ -168,10 +195,7 @@ export function HoldingsTable({ transactions, assets, prices, changes, pmktPosit
             {CATEGORIES.map(c => <option key={c} value={c}>{c}</option>)}
           </select>
           {(search || catFilter) && (
-            <button
-              onClick={() => { setSearch(''); setCatFilter('') }}
-              className="text-xs text-gray-600 hover:text-gray-400 transition-colors"
-            >
+            <button onClick={() => { setSearch(''); setCatFilter('') }} className="text-xs text-gray-600 hover:text-gray-400 transition-colors">
               Clear
             </button>
           )}
@@ -185,12 +209,35 @@ export function HoldingsTable({ transactions, assets, prices, changes, pmktPosit
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b border-border">
-                <ColHeader label="Asset"      col="asset"      sort={sort} onSort={handleSort} className="px-4 text-left" />
-                <ColHeader label="Price"      col="price"      sort={sort} onSort={handleSort} className="px-4 text-right hidden md:table-cell" />
-                <ColHeader label="24h"        col="24h"        sort={sort} onSort={handleSort} className="px-4 text-right" />
+                <ColHeader label="Asset" col="asset" sort={sort} onSort={handleSort} className="px-4 text-left" />
+                <ColHeader label="Price" col="price" sort={sort} onSort={handleSort} className="px-4 text-right hidden md:table-cell" />
+                {/* Period-toggle change header */}
+                <th
+                  className="px-4 py-3 text-right text-xs text-gray-500 uppercase tracking-wider cursor-pointer select-none"
+                  onClick={() => handleSort('change')}
+                >
+                  <div className="flex items-center justify-end gap-0.5">
+                    {PERIODS.map(p => (
+                      <button
+                        key={p}
+                        onClick={e => { e.stopPropagation(); setChangePeriod(p) }}
+                        className={`px-1 py-0.5 rounded transition-colors ${
+                          changePeriod === p ? 'bg-surface-3 text-gray-100' : 'text-gray-600 hover:text-gray-400'
+                        }`}
+                      >
+                        {p}
+                      </button>
+                    ))}
+                    <SortIcon active={sort.col === 'change'} dir={sort.dir} />
+                  </div>
+                </th>
+                {/* Sparkline */}
+                <th className="px-4 py-3 text-right text-xs text-gray-500 uppercase tracking-wider hidden lg:table-cell">
+                  7D Chart
+                </th>
                 <th className="px-4 py-3 text-right text-xs text-gray-500 uppercase tracking-wider hidden sm:table-cell">Holdings</th>
-                <ColHeader label="Avg Cost"   col="avgcost"    sort={sort} onSort={handleSort} className="px-4 text-right hidden lg:table-cell" />
-                <ColHeader label="Value"      col="value"      sort={sort} onSort={handleSort} className="px-4 text-right" />
+                <ColHeader label="Avg Cost" col="avgcost" sort={sort} onSort={handleSort} className="px-4 text-right hidden lg:table-cell" />
+                <ColHeader label="Value"    col="value"   sort={sort} onSort={handleSort} className="px-4 text-right" />
                 <ColHeader label="Unrealized" col="unrealized" sort={sort} onSort={handleSort} className="px-4 text-right" />
                 <ColHeader label="Realized"   col="realized"   sort={sort} onSort={handleSort} className="px-4 text-right hidden lg:table-cell" />
               </tr>
@@ -198,115 +245,122 @@ export function HoldingsTable({ transactions, assets, prices, changes, pmktPosit
             <tbody className="divide-y divide-border">
               {rows.length === 0 ? (
                 <tr>
-                  <td colSpan={8} className="px-4 py-8 text-center text-gray-600 text-xs">
+                  <td colSpan={9} className="px-4 py-8 text-center text-gray-600 text-xs">
                     No assets match the current filter.
                   </td>
                 </tr>
-              ) : rows.map(row => (
-                <>
-                <tr key={row.id} className="group hover:bg-surface-2 transition-colors">
-                  <td className="px-4 py-3">
-                    <div className="flex items-center gap-2 flex-wrap">
-                      <span className="font-semibold text-gray-100">{row.symbol}</span>
-                      <span className={`text-xs px-1.5 py-0.5 rounded ${CATEGORY_BADGE[row.category] ?? ''}`}>
-                        {row.category}
-                      </span>
-                      <span className={`text-xs px-1.5 py-0.5 rounded ${CHAIN_BADGE[row.blockchain] ?? 'bg-gray-800 text-gray-400'}`}>
-                        {row.blockchain ?? 'hyperevm'}
-                      </span>
-                    </div>
-                    <div className="flex items-center gap-1.5 mt-0.5">
-                      <span className="text-xs text-gray-500">{row.name}</span>
-                      {onUpdateAsset && (
-                        <button
-                          onClick={() => editingId === row.id ? setEditingId(null) : startEdit(row)}
-                          className="text-gray-700 hover:text-accent transition-colors opacity-0 group-hover:opacity-100 text-xs leading-none"
-                          title="Edit asset"
-                        >
-                          ✎
-                        </button>
-                      )}
-                    </div>
-                  </td>
-                  <td className="px-4 py-3 text-right num text-gray-200 hidden md:table-cell">
-                    {row.currentPrice != null ? fmtUsd(row.currentPrice) : <span className="text-gray-600">—</span>}
-                  </td>
-                  <td className={`px-4 py-3 text-right num text-xs ${pnlClass(row.change24h)}`}>
-                    {row.change24h != null ? fmtPct(row.change24h) : <span className="text-gray-600">—</span>}
-                  </td>
-                  <td className="px-4 py-3 text-right hidden sm:table-cell">
-                    <div className="num text-gray-200">{fmtQty(row.qty)}</div>
-                    <div className="num text-xs text-gray-500">{fmtUsd(row.currentValue)}</div>
-                  </td>
-                  <td className="px-4 py-3 text-right num text-gray-400 hidden lg:table-cell">{fmtUsd(row.avgCost)}</td>
-                  <td className="px-4 py-3 text-right num text-gray-200">{fmtUsd(row.currentValue)}</td>
-                  <td className="px-4 py-3 text-right num">
-                    {row.unrealizedPnl != null ? (
-                      <div className={pnlClass(row.unrealizedPnl)}>
-                        <div>{fmtUsd(row.unrealizedPnl)}</div>
-                        <div className="text-xs">{fmtPct(row.unrealizedPct)}</div>
+              ) : rows.map(row => {
+                const changeVal = getChange(row.coingecko_id)
+                const sparkline = marketData[row.coingecko_id]?.sparkline
+                return (
+                  <>
+                  <tr key={row.id} className="group hover:bg-surface-2 transition-colors">
+                    <td className="px-4 py-3">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <span className="font-semibold text-gray-100">{row.symbol}</span>
+                        <span className={`text-xs px-1.5 py-0.5 rounded ${CATEGORY_BADGE[row.category] ?? ''}`}>
+                          {row.category}
+                        </span>
+                        <span className={`text-xs px-1.5 py-0.5 rounded ${CHAIN_BADGE[row.blockchain] ?? 'bg-gray-800 text-gray-400'}`}>
+                          {row.blockchain ?? 'hyperevm'}
+                        </span>
                       </div>
-                    ) : <span className="text-gray-600">—</span>}
-                  </td>
-                  <td className={`px-4 py-3 text-right num hidden lg:table-cell ${pnlClass(row.realizedPnl)}`}>
-                    {fmtUsd(row.realizedPnl)}
-                  </td>
-                </tr>
-                {editingId === row.id && (
-                  <tr key={`${row.id}-edit`} className="bg-surface-2 border-b border-border">
-                    <td colSpan={8} className="px-4 py-3">
-                      <div className="flex flex-wrap gap-3 items-end">
-                        <div>
-                          <label className="text-xs text-gray-500 block mb-1">CoinGecko ID</label>
-                          <input
-                            value={editDraft.coingecko_id}
-                            onChange={e => setEditDraft(d => ({ ...d, coingecko_id: e.target.value.trim() }))}
-                            placeholder="e.g. bitcoin"
-                            className="bg-surface-3 border border-border rounded px-2 py-1 text-xs text-gray-200 focus:outline-none focus:border-accent w-36"
-                          />
-                        </div>
-                        <div>
-                          <label className="text-xs text-gray-500 block mb-1">Name</label>
-                          <input
-                            value={editDraft.name}
-                            onChange={e => setEditDraft(d => ({ ...d, name: e.target.value }))}
-                            className="bg-surface-3 border border-border rounded px-2 py-1 text-xs text-gray-200 focus:outline-none focus:border-accent w-36"
-                          />
-                        </div>
-                        <div>
-                          <label className="text-xs text-gray-500 block mb-1">Category</label>
-                          <select
-                            value={editDraft.category}
-                            onChange={e => setEditDraft(d => ({ ...d, category: e.target.value }))}
-                            className="bg-surface-3 border border-border rounded px-2 py-1 text-xs text-gray-400 focus:outline-none focus:border-accent"
-                          >
-                            {CATEGORIES.map(c => <option key={c} value={c}>{c}</option>)}
-                          </select>
-                        </div>
-                        <div className="flex gap-2 items-center">
+                      <div className="flex items-center gap-1.5 mt-0.5">
+                        <span className="text-xs text-gray-500">{row.name}</span>
+                        {onUpdateAsset && (
                           <button
-                            onClick={saveEdit}
-                            disabled={editSaving}
-                            className="px-3 py-1 text-xs bg-accent hover:bg-indigo-500 text-white rounded transition-colors disabled:opacity-50"
+                            onClick={() => editingId === row.id ? setEditingId(null) : startEdit(row)}
+                            className="text-gray-700 hover:text-accent transition-colors opacity-0 group-hover:opacity-100 text-xs leading-none"
+                            title="Edit asset"
                           >
-                            {editSaving ? 'Saving…' : 'Save'}
+                            ✎
                           </button>
-                          <button
-                            onClick={() => setEditingId(null)}
-                            className="px-3 py-1 text-xs text-gray-500 hover:text-gray-300 transition-colors"
-                          >
-                            Cancel
-                          </button>
-                        </div>
+                        )}
                       </div>
-                      <p className="text-xs text-gray-600 mt-2">
-                        Find the correct ID on coingecko.com — search for the coin and copy the ID from the URL (e.g. <span className="text-gray-400">bitcoin</span>, <span className="text-gray-400">solana</span>, <span className="text-gray-400">arbitrum</span>).
-                      </p>
+                    </td>
+                    <td className="px-4 py-3 text-right num text-gray-200 hidden md:table-cell">
+                      {row.currentPrice != null ? fmtUsd(row.currentPrice) : <span className="text-gray-600">—</span>}
+                    </td>
+                    <td className={`px-4 py-3 text-right num text-xs ${pnlClass(changeVal)}`}>
+                      {changeVal != null ? fmtPct(changeVal) : <span className="text-gray-600">—</span>}
+                    </td>
+                    <td className="px-4 py-3 text-right hidden lg:table-cell">
+                      <Sparkline data={sparkline} />
+                    </td>
+                    <td className="px-4 py-3 text-right hidden sm:table-cell">
+                      <div className="num text-gray-200">{fmtQty(row.qty)}</div>
+                      <div className="num text-xs text-gray-500">{fmtUsd(row.currentValue)}</div>
+                    </td>
+                    <td className="px-4 py-3 text-right num text-gray-400 hidden lg:table-cell">{fmtUsd(row.avgCost)}</td>
+                    <td className="px-4 py-3 text-right num text-gray-200">{fmtUsd(row.currentValue)}</td>
+                    <td className="px-4 py-3 text-right num">
+                      {row.unrealizedPnl != null ? (
+                        <div className={pnlClass(row.unrealizedPnl)}>
+                          <div>{fmtUsd(row.unrealizedPnl)}</div>
+                          <div className="text-xs">{fmtPct(row.unrealizedPct)}</div>
+                        </div>
+                      ) : <span className="text-gray-600">—</span>}
+                    </td>
+                    <td className={`px-4 py-3 text-right num hidden lg:table-cell ${pnlClass(row.realizedPnl)}`}>
+                      {fmtUsd(row.realizedPnl)}
                     </td>
                   </tr>
-                )}
-                </>
-              ))}
+                  {editingId === row.id && (
+                    <tr key={`${row.id}-edit`} className="bg-surface-2 border-b border-border">
+                      <td colSpan={9} className="px-4 py-3">
+                        <div className="flex flex-wrap gap-3 items-end">
+                          <div>
+                            <label className="text-xs text-gray-500 block mb-1">CoinGecko ID</label>
+                            <input
+                              value={editDraft.coingecko_id}
+                              onChange={e => setEditDraft(d => ({ ...d, coingecko_id: e.target.value.trim() }))}
+                              placeholder="e.g. bitcoin"
+                              className="bg-surface-3 border border-border rounded px-2 py-1 text-xs text-gray-200 focus:outline-none focus:border-accent w-36"
+                            />
+                          </div>
+                          <div>
+                            <label className="text-xs text-gray-500 block mb-1">Name</label>
+                            <input
+                              value={editDraft.name}
+                              onChange={e => setEditDraft(d => ({ ...d, name: e.target.value }))}
+                              className="bg-surface-3 border border-border rounded px-2 py-1 text-xs text-gray-200 focus:outline-none focus:border-accent w-36"
+                            />
+                          </div>
+                          <div>
+                            <label className="text-xs text-gray-500 block mb-1">Category</label>
+                            <select
+                              value={editDraft.category}
+                              onChange={e => setEditDraft(d => ({ ...d, category: e.target.value }))}
+                              className="bg-surface-3 border border-border rounded px-2 py-1 text-xs text-gray-400 focus:outline-none focus:border-accent"
+                            >
+                              {CATEGORIES.map(c => <option key={c} value={c}>{c}</option>)}
+                            </select>
+                          </div>
+                          <div className="flex gap-2 items-center">
+                            <button
+                              onClick={saveEdit}
+                              disabled={editSaving}
+                              className="px-3 py-1 text-xs bg-accent hover:bg-indigo-500 text-white rounded transition-colors disabled:opacity-50"
+                            >
+                              {editSaving ? 'Saving…' : 'Save'}
+                            </button>
+                            <button
+                              onClick={() => setEditingId(null)}
+                              className="px-3 py-1 text-xs text-gray-500 hover:text-gray-300 transition-colors"
+                            >
+                              Cancel
+                            </button>
+                          </div>
+                        </div>
+                        <p className="text-xs text-gray-600 mt-2">
+                          Find the correct ID on coingecko.com — search the coin and copy the ID from the URL (e.g. <span className="text-gray-400">bitcoin</span>, <span className="text-gray-400">solana</span>, <span className="text-gray-400">arbitrum</span>).
+                        </p>
+                      </td>
+                    </tr>
+                  )}
+                  </>
+                )
+              })}
             </tbody>
           </table>
         </div>

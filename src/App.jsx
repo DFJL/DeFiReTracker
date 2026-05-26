@@ -83,7 +83,7 @@ export default function App() {
   }, [transactions])
 
   const coingeckoIds = useMemo(() => assets.map(a => a.coingecko_id), [assets])
-  const { prices, changes, lastUpdated, loading: loadingPrices, refresh: refreshPrices } = usePrices(coingeckoIds)
+  const { prices, changes, marketData, lastUpdated, loading: loadingPrices, refresh: refreshPrices } = usePrices(coingeckoIds)
 
   // Polymarket — lifted to app level so positions flow into Holdings & Txs
   const pmkt = usePolymarket(portfolioId)
@@ -221,6 +221,7 @@ export default function App() {
               prices={prices}
               changes={changes}
               pmktPositions={pmkt.open}
+              marketData={marketData}
               onUpdateAsset={updateAsset}
               onAutoFix={autoFixAssets}
             />
