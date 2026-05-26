@@ -88,7 +88,7 @@ export function AuthGate({ children }) {
     e.preventDefault()
     setLoading(true); setError(null)
     const { error } = await supabase.auth.resetPasswordForEmail(email, {
-      redirectTo: window.location.origin,
+      redirectTo: 'https://defiretracker.vercel.app',
     })
     if (error) setError(error.message)
     else setConfirming(true)
