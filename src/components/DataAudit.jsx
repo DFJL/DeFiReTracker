@@ -142,6 +142,50 @@ export function runAudit(transactions, assets) {
     }
   }
 
+  // 4. Large transaction outlier — single buy/sell value far exceeds typical for this asset
+  const assetBuySellEntries = new Map()
+  for (const tx of transactions) {
+    if (tx.type !== 'buy' && tx.type !== 'sell') continue
+    const qty   = Number(tx.qty)
+    const price = Number(tx.price_usd)
+    if (qty <= 0 || price <= 0) continue
+    const asset = assetMap[tx.asset_id]
+    if (!asset || STABLES.has(asset.symbol.toUpperCase())) continue
+    if (!assetBuySellEntries.has(tx.asset_id)) assetBuySellEntries.set(tx.asset_id, [])
+    assetBuySellEntries.get(tx.asset_id).push({ tx, value: qty * price })
+  }
+
+  for (const [assetId, entries] of assetBuySellEntries) {
+    if (entries.length < 3) continue  // need a baseline to compare against
+    const asset = assetMap[assetId]
+
+    for (let i = 0; i < entries.length; i++) {
+      const { tx, value } = entries[i]
+      if (value < 2000) continue  // skip small absolute amounts
+
+      const otherValues = entries.filter((_, j) => j !== i).map(e => e.value)
+      const othersMedian = median(otherValues)
+      if (othersMedian <= 0) continue
+      const ratio = value / othersMedian
+      if (ratio < 10) continue  // must be ≥10× typical to flag
+
+      findings.push({
+        id:       `large|${tx.id}`,
+        type:     'large_outlier',
+        severity: 'warning',
+        assetSymbol: asset.symbol,
+        title:   `Unusually large ${tx.type}`,
+        detail:  `${asset.symbol} ${tx.type} of ${fmtQty(Number(tx.qty))} @ ${fmtUsd(Number(tx.price_usd))} on ${fmtDate(tx.date)} totals ${fmtUsd(value)} — ${Math.round(ratio)}× the typical ${asset.symbol} transaction (${fmtUsd(othersMedian)}). Check for misplaced decimal or wrong quantity.`,
+        transactions: [tx],
+        fix: {
+          action: 'delete',
+          ids:    [tx.id],
+          label:  'Delete if data entry error — skip if this trade was intentional',
+        },
+      })
+    }
+  }
+
   return findings
 }
 
@@ -154,6 +198,7 @@ const TYPE_LABEL = {
   duplicate:    'Duplicate',
   price_anomaly:'Price anomaly',
   price_outlier:'Price outlier',
+  large_outlier:'Large outlier',
 }
 
 function FindingRow({ finding, onApply, onSkip, applying, skipped }) {
