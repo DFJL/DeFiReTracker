@@ -10,6 +10,7 @@ import { TransactionManager } from './components/TransactionManager'
 import { CsvImporter } from './components/CsvImporter'
 import { PolymarketTracker } from './components/PolymarketTracker'
 import { Analytics } from './components/Analytics'
+import { DataAudit } from './components/DataAudit'
 import { supabase } from './lib/supabase'
 import { lookupCoinGeckoId } from './lib/priceService'
 
@@ -75,6 +76,7 @@ function IconPmkt({ cls }) {
 export default function App() {
   const [activeTab, setActiveTab] = useState('Dashboard')
   const [portfolioId, setPortfolioId] = useState(null)
+  const [auditOpen, setAuditOpen] = useState(false)
 
   const { portfolios, userId, loading: loadingPortfolios, loadError, createPortfolio, claimPortfolio, sharePortfolio, deletePortfolio } = usePortfolios()
 
@@ -254,6 +256,7 @@ export default function App() {
               marketData={marketData}
               onUpdateAsset={updateAsset}
               onAutoFix={autoFixAssets}
+              onAudit={() => setAuditOpen(true)}
             />
           )}
 
@@ -294,6 +297,17 @@ export default function App() {
           )}
         </div>
       </main>
+
+      {/* Data Audit modal */}
+      {auditOpen && (
+        <DataAudit
+          transactions={transactions}
+          assets={assets}
+          onBatchDelete={batchDelete}
+          onUpsert={upsertTransaction}
+          onClose={() => setAuditOpen(false)}
+        />
+      )}
 
       {/* Mobile bottom navigation */}
       <nav className="md:hidden fixed bottom-0 left-0 right-0 z-40 bg-surface-1 border-t border-border">
