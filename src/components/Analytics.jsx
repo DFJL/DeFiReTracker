@@ -40,7 +40,7 @@ function fmtShort(n) {
 // ── Categories config ───────────────────────────────────────────────────────
 const CATS = [
   { key: 'appreciation', label: 'Price Appreciation', color: '#6366f1', desc: 'Unrealized P/L on current holdings (snapshot)' },
-  { key: 'realized',     label: 'Realized Gains',     color: '#22c55e', desc: 'Locked-in profit from closes & sells' },
+  { key: 'realized',     label: 'Realized Gains',     color: '#22c55e', desc: 'Net profit from sells (proceeds minus avg cost basis — not gross)' },
   { key: 'lp',          label: 'LP Rewards',          color: '#f59e0b', desc: 'Liquidity provision fees & differentials' },
   { key: 'airdrop',     label: 'Airdrops',            color: '#a78bfa', desc: 'Free tokens received (incl. untagged inflows)' },
   { key: 'staking',     label: 'Staking / Yield',     color: '#34d399', desc: 'Staking rewards, earn events, yield' },
@@ -61,6 +61,13 @@ const INCOME_RANGES = [
   { id: '30D', label: '30D' },
   { id: '90D', label: '90D' },
   { id: '1Y',  label: '1Y'  },
+]
+
+const MONTHLY_RANGES = [
+  { id: '6M',  months: 6  },
+  { id: '1Y',  months: 12 },
+  { id: '2Y',  months: 24 },
+  { id: 'All', months: null },
 ]
 
 // ── Data computation ────────────────────────────────────────────────────────
@@ -112,10 +119,10 @@ function computeBreakdown(transactions, assets, prices, since) {
   return result
 }
 
-function computeMonthly(transactions, prices) {
+function computeMonthly(transactions, prices, numMonths) {
   const now    = new Date()
   const months = {}
-  for (let i = 11; i >= 0; i--) {
+  for (let i = numMonths - 1; i >= 0; i--) {
     const d   = new Date(now.getFullYear(), now.getMonth() - i, 1)
     const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`
     months[key] = {
@@ -383,6 +390,7 @@ function PeriodBtn({ id, active, onClick }) {
 export function Analytics({ transactions, assets, prices, changes, marketData = {} }) {
   const [perfPeriod,   setPerfPeriod]   = useState('24H')
   const [incomeRange,  setIncomeRange]  = useState('ALL')
+  const [monthlyRange, setMonthlyRange] = useState('1Y')
 
   // Per-asset enriched rows
   const assetRows = useMemo(() => {
@@ -423,7 +431,17 @@ export function Analytics({ transactions, assets, prices, changes, marketData = 
   // Income breakdown
   const since     = useMemo(() => getSince(incomeRange), [incomeRange])
   const breakdown = useMemo(() => computeBreakdown(transactions, assets, prices, since), [transactions, assets, prices, since])
-  const monthly   = useMemo(() => computeMonthly(transactions, prices), [transactions, prices])
+
+  const monthlyNumMonths = useMemo(() => {
+    const found = MONTHLY_RANGES.find(r => r.id === monthlyRange)
+    if (found?.months != null) return found.months
+    if (!transactions.length) return 12
+    const earliest = new Date(Math.min(...transactions.map(t => new Date(t.date).getTime())))
+    const now = new Date()
+    return Math.max(1, (now.getFullYear() - earliest.getFullYear()) * 12 + (now.getMonth() - earliest.getMonth()) + 1)
+  }, [monthlyRange, transactions])
+
+  const monthly = useMemo(() => computeMonthly(transactions, prices, monthlyNumMonths), [transactions, prices, monthlyNumMonths])
 
   // Airdrops
   const airdropGroups = useMemo(() => computeAirdropGroups(transactions, prices), [transactions, prices])
@@ -560,8 +578,23 @@ export function Analytics({ transactions, assets, prices, changes, marketData = 
         {/* Monthly bar chart */}
         <div className="bg-surface-1 border border-border rounded-lg p-4">
           <div className="flex items-center justify-between mb-3 flex-wrap gap-2">
-            <h3 className="text-xs text-gray-500 uppercase tracking-wider font-semibold">Monthly Income (Last 12 Months)</h3>
+            <h3 className="text-xs text-gray-500 uppercase tracking-wider font-semibold">
+              Monthly Income ({monthlyRange === 'All' ? 'All Time' : `Last ${monthlyRange}`})
+            </h3>
             <div className="flex items-center gap-3 flex-wrap">
+              <div className="flex gap-1">
+                {MONTHLY_RANGES.map(r => (
+                  <button
+                    key={r.id}
+                    onClick={() => setMonthlyRange(r.id)}
+                    className={`px-2 py-0.5 text-xs rounded transition-colors ${
+                      monthlyRange === r.id
+                        ? 'bg-accent/20 text-accent border border-accent/40'
+                        : 'border border-border text-gray-500 hover:text-gray-300 hover:border-gray-500'
+                    }`}
+                  >{r.id}</button>
+                ))}
+              </div>
               {CHART_CATS.map(c => (
                 <div key={c.key} className="flex items-center gap-1.5">
                   <span className="w-2 h-2 rounded-sm" style={{ background: c.color }} />

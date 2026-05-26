@@ -7,6 +7,7 @@ const CATEGORY_COLORS = { spot:'#6366f1', stablecoin:'#22c55e', defi:'#f59e0b', 
 const CHAIN_COLORS    = { hyperevm:'#6366f1', solana:'#9945ff', ethereum:'#627eea', polygon:'#8247e5' }
 
 const VIEWS = ['Asset','Category','Blockchain']
+const DUST_THRESHOLD = 50
 
 function buildSlices(rows, view) {
   const map = {}
@@ -29,16 +30,30 @@ function colorFor(view, name, i) {
 }
 
 export function AllocationChart({ assetRows, totalValue }) {
-  const [view, setView] = useState('Asset')
-  const slices = buildSlices(assetRows, view)
+  const [view, setView]         = useState('Asset')
+  const [hideDust, setHideDust] = useState(false)
 
-  if (!slices.length) return null
+  const allSlices  = buildSlices(assetRows, view)
+  const slices     = hideDust ? allSlices.filter(s => s.value >= DUST_THRESHOLD) : allSlices
+  const dustCount  = allSlices.length - slices.length
+
+  if (!allSlices.length) return null
 
   return (
     <div className="bg-surface-1 border border-border rounded-lg p-4">
       <div className="flex items-center justify-between mb-4">
         <p className="text-xs text-gray-500 uppercase tracking-wider">Allocation</p>
-        <div className="flex gap-1">
+        <div className="flex items-center gap-1">
+          <button
+            onClick={() => setHideDust(h => !h)}
+            title={hideDust ? `Showing ${dustCount} hidden dust positions (< $${DUST_THRESHOLD})` : `Hide positions under $${DUST_THRESHOLD}`}
+            className={`px-2.5 py-1 text-xs rounded transition-colors ${
+              hideDust ? 'bg-surface-3 text-gray-100' : 'text-gray-600 hover:text-gray-300'
+            }`}
+          >
+            {hideDust && dustCount > 0 ? `Dust (${dustCount})` : 'Dust'}
+          </button>
+          <span className="text-gray-700 text-xs px-0.5">|</span>
           {VIEWS.map(v => (
             <button
               key={v}
