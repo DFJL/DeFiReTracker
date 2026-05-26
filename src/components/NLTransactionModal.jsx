@@ -315,14 +315,19 @@ export function NLTransactionModal({ portfolioId, onParsedSingle, onBulkSave, on
         for (const sym of missing) {
           const txForSym = selectedTxs.find(tx => (tx.symbol ?? '').toUpperCase() === sym)
           const name = txForSym?.name || sym
-          const { data: created } = await supabase
+          const { data: inserted } = await supabase
             .from('assets')
-            .upsert(
-              { symbol: sym, name, category: 'spot', coingecko_id: sym.toLowerCase() },
-              { onConflict: 'symbol' }
-            )
-            .select('id').single()
-          if (created?.id) assetMap.set(sym, created.id)
+            .insert({ symbol: sym, name, category: 'spot', coingecko_id: sym.toLowerCase() })
+            .select('id')
+            .single()
+          if (inserted?.id) {
+            assetMap.set(sym, inserted.id)
+          } else {
+            // Asset already exists — fetch it
+            const { data: existing } = await supabase
+              .from('assets').select('id').eq('symbol', sym).maybeSingle()
+            if (existing?.id) assetMap.set(sym, existing.id)
+          }
         }
       }
 
