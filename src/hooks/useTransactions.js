@@ -35,11 +35,17 @@ export function useTransactions(portfolioId) {
     return { error }
   }
 
+  async function batchDelete(ids) {
+    const { error } = await supabase.from('transactions').delete().in('id', ids)
+    if (!error) setTransactions(t => t.filter(x => !ids.includes(x.id)))
+    return { error }
+  }
+
   async function bulkInsert(rows) {
     const { error } = await supabase.from('transactions').insert(rows)
     if (!error) load()
     return { error }
   }
 
-  return { transactions, loading, upsertTransaction, deleteTransaction, bulkInsert, reload: load }
+  return { transactions, loading, upsertTransaction, deleteTransaction, batchDelete, bulkInsert, reload: load }
 }

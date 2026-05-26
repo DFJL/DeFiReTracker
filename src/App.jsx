@@ -71,7 +71,7 @@ export default function App() {
     if (portfolios.length > 0 && !portfolioId) setPortfolioId(portfolios[0].id)
   }, [portfolios])
 
-  const { transactions, loading: loadingTx, upsertTransaction, deleteTransaction, bulkInsert, reload: reloadTx } = useTransactions(portfolioId)
+  const { transactions, loading: loadingTx, upsertTransaction, deleteTransaction, batchDelete, bulkInsert, reload: reloadTx } = useTransactions(portfolioId)
 
   const assets = useMemo(() => {
     const seen = new Map()
@@ -207,6 +207,7 @@ export default function App() {
               transactions={transactions}
               onUpsert={upsertTransaction}
               onDelete={deleteTransaction}
+              onBatchDelete={batchDelete}
               onBulkInsert={bulkInsert}
             />
           )}

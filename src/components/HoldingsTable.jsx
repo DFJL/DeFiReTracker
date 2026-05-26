@@ -1,4 +1,4 @@
-import { useMemo } from 'react'
+import { useMemo, useState } from 'react'
 import { computeAssetPnl } from '../utils/pnl'
 import { fmtUsd, fmtQty, fmtPct, pnlClass } from '../utils/format'
 
@@ -14,9 +14,34 @@ const CHAIN_BADGE = {
   ethereum: 'bg-blue-900/40 text-blue-400',
   polygon:  'bg-violet-900/40 text-violet-400',
 }
+const CATEGORIES = ['spot', 'stablecoin', 'defi', 'rwa']
+
+function SortIcon({ active, dir }) {
+  if (!active) return <span className="text-gray-700 ml-0.5">⇅</span>
+  return <span className="text-accent ml-0.5">{dir === 'asc' ? '↑' : '↓'}</span>
+}
+
+function ColHeader({ label, col, sort, onSort, className = '' }) {
+  return (
+    <th
+      className={`py-3 text-xs text-gray-500 uppercase tracking-wider cursor-pointer select-none hover:text-gray-300 transition-colors ${className}`}
+      onClick={() => onSort(col)}
+    >
+      {label}<SortIcon active={sort.col === col} dir={sort.dir} />
+    </th>
+  )
+}
 
 export function HoldingsTable({ transactions, assets, prices, changes, pmktPositions = [] }) {
-  const rows = useMemo(() => {
+  const [sort, setSort]       = useState({ col: 'value', dir: 'desc' })
+  const [search, setSearch]   = useState('')
+  const [catFilter, setCatFilter] = useState('')
+
+  function handleSort(col) {
+    setSort(s => s.col === col ? { col, dir: s.dir === 'asc' ? 'desc' : 'asc' } : { col, dir: 'desc' })
+  }
+
+  const allRows = useMemo(() => {
     return assets
       .map(asset => {
         const txs = transactions.filter(t => t.asset_id === asset.id)
@@ -25,13 +50,34 @@ export function HoldingsTable({ transactions, assets, prices, changes, pmktPosit
         const pnl = computeAssetPnl(txs, price)
         if (pnl.qty <= 0 && pnl.realizedPnl === 0) return null
         const change24h = changes[asset.coingecko_id] ?? null
-        return { ...asset, ...pnl, currentPrice: price ?? null, change24h, _type: 'asset' }
+        return { ...asset, ...pnl, currentPrice: price ?? null, change24h }
       })
       .filter(Boolean)
-      .sort((a, b) => (b.currentValue ?? 0) - (a.currentValue ?? 0))
   }, [transactions, assets, prices, changes])
 
-  // Build Polymarket rows from open positions
+  const rows = useMemo(() => {
+    let r = allRows
+    if (search.trim()) {
+      const q = search.trim().toLowerCase()
+      r = r.filter(row => row.symbol?.toLowerCase().includes(q) || row.name?.toLowerCase().includes(q))
+    }
+    if (catFilter) r = r.filter(row => row.category === catFilter)
+
+    return [...r].sort((a, b) => {
+      let va, vb
+      if (sort.col === 'asset')      { va = a.symbol ?? ''; vb = b.symbol ?? '' }
+      if (sort.col === 'price')      { va = a.currentPrice ?? 0; vb = b.currentPrice ?? 0 }
+      if (sort.col === '24h')        { va = a.change24h ?? -Infinity; vb = b.change24h ?? -Infinity }
+      if (sort.col === 'value')      { va = a.currentValue ?? 0; vb = b.currentValue ?? 0 }
+      if (sort.col === 'unrealized') { va = a.unrealizedPnl ?? -Infinity; vb = b.unrealizedPnl ?? -Infinity }
+      if (sort.col === 'realized')   { va = a.realizedPnl ?? 0; vb = b.realizedPnl ?? 0 }
+      if (sort.col === 'avgcost')    { va = a.avgCost ?? 0; vb = b.avgCost ?? 0 }
+      if (va < vb) return sort.dir === 'asc' ? -1 : 1
+      if (va > vb) return sort.dir === 'asc' ? 1 : -1
+      return 0
+    })
+  }, [allRows, search, catFilter, sort])
+
   const pmktRows = useMemo(() => {
     return pmktPositions.map((p, i) => {
       const size = Number(p.size ?? 0)
@@ -43,11 +89,11 @@ export function HoldingsTable({ transactions, assets, prices, changes, pmktPosit
       const pct = invested > 0 ? (pnl / invested) * 100 : null
       const outcome = p.outcome ?? p.side ?? ''
       const title = p.title ?? p.question ?? p.market?.question ?? 'Unknown market'
-      return { _type: 'pmkt', _key: i, title, outcome, size, avgPrice, currentPrice, currentValue: value, invested, pnl, pct }
+      return { _key: i, title, outcome, size, avgPrice, currentPrice, currentValue: value, invested, pnl, pct }
     })
   }, [pmktPositions])
 
-  const hasAny = rows.length > 0 || pmktRows.length > 0
+  const hasAny = allRows.length > 0 || pmktRows.length > 0
 
   if (!hasAny) return (
     <div className="bg-surface-1 border border-border rounded-lg p-8 text-center text-gray-500 text-sm">
@@ -57,23 +103,64 @@ export function HoldingsTable({ transactions, assets, prices, changes, pmktPosit
 
   return (
     <div className="space-y-4">
-      {rows.length > 0 && (
+      {/* Filter bar */}
+      {allRows.length > 0 && (
+        <div className="flex gap-2 flex-wrap items-center">
+          <div className="relative">
+            <svg className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-600" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <circle cx="11" cy="11" r="8" /><path d="m21 21-4.35-4.35" />
+            </svg>
+            <input
+              value={search}
+              onChange={e => setSearch(e.target.value)}
+              placeholder="Filter asset…"
+              className="pl-7 pr-3 py-1.5 text-xs bg-surface-1 border border-border rounded text-gray-200 placeholder-gray-600 focus:outline-none focus:border-accent w-36"
+            />
+          </div>
+          <select
+            value={catFilter}
+            onChange={e => setCatFilter(e.target.value)}
+            className="py-1.5 px-2 text-xs bg-surface-1 border border-border rounded text-gray-400 focus:outline-none focus:border-accent"
+          >
+            <option value="">All categories</option>
+            {CATEGORIES.map(c => <option key={c} value={c}>{c}</option>)}
+          </select>
+          {(search || catFilter) && (
+            <button
+              onClick={() => { setSearch(''); setCatFilter('') }}
+              className="text-xs text-gray-600 hover:text-gray-400 transition-colors"
+            >
+              Clear
+            </button>
+          )}
+          <span className="text-xs text-gray-600">{rows.length} of {allRows.length}</span>
+        </div>
+      )}
+
+      {/* Asset holdings table */}
+      {allRows.length > 0 && (
         <div className="bg-surface-1 border border-border rounded-lg overflow-x-auto">
           <table className="w-full text-sm">
             <thead>
-              <tr className="border-b border-border text-xs text-gray-500 uppercase tracking-wider">
-                <th className="px-4 py-3 text-left">Asset</th>
-                <th className="px-4 py-3 text-right hidden md:table-cell">Price</th>
-                <th className="px-4 py-3 text-right">24h</th>
-                <th className="px-4 py-3 text-right hidden sm:table-cell">Holdings</th>
-                <th className="px-4 py-3 text-right hidden lg:table-cell">Avg Cost</th>
-                <th className="px-4 py-3 text-right">Value</th>
-                <th className="px-4 py-3 text-right">Unrealized</th>
-                <th className="px-4 py-3 text-right hidden lg:table-cell">Realized</th>
+              <tr className="border-b border-border">
+                <ColHeader label="Asset"      col="asset"      sort={sort} onSort={handleSort} className="px-4 text-left" />
+                <ColHeader label="Price"      col="price"      sort={sort} onSort={handleSort} className="px-4 text-right hidden md:table-cell" />
+                <ColHeader label="24h"        col="24h"        sort={sort} onSort={handleSort} className="px-4 text-right" />
+                <th className="px-4 py-3 text-right text-xs text-gray-500 uppercase tracking-wider hidden sm:table-cell">Holdings</th>
+                <ColHeader label="Avg Cost"   col="avgcost"    sort={sort} onSort={handleSort} className="px-4 text-right hidden lg:table-cell" />
+                <ColHeader label="Value"      col="value"      sort={sort} onSort={handleSort} className="px-4 text-right" />
+                <ColHeader label="Unrealized" col="unrealized" sort={sort} onSort={handleSort} className="px-4 text-right" />
+                <ColHeader label="Realized"   col="realized"   sort={sort} onSort={handleSort} className="px-4 text-right hidden lg:table-cell" />
               </tr>
             </thead>
             <tbody className="divide-y divide-border">
-              {rows.map(row => (
+              {rows.length === 0 ? (
+                <tr>
+                  <td colSpan={8} className="px-4 py-8 text-center text-gray-600 text-xs">
+                    No assets match the current filter.
+                  </td>
+                </tr>
+              ) : rows.map(row => (
                 <tr key={row.id} className="hover:bg-surface-2 transition-colors">
                   <td className="px-4 py-3">
                     <div className="flex items-center gap-2 flex-wrap">
@@ -117,6 +204,7 @@ export function HoldingsTable({ transactions, assets, prices, changes, pmktPosit
         </div>
       )}
 
+      {/* Polymarket positions */}
       {pmktRows.length > 0 && (
         <div className="bg-surface-1 border border-border rounded-lg overflow-x-auto">
           <div className="px-4 py-2.5 border-b border-border flex items-center gap-2">
@@ -150,9 +238,7 @@ export function HoldingsTable({ transactions, assets, prices, changes, pmktPosit
                   <td className="px-4 py-3 hidden sm:table-cell">
                     <span className={`text-xs px-1.5 py-0.5 rounded ${
                       row.outcome.toLowerCase() === 'yes' ? 'bg-green-500/20 text-green-300' : 'bg-red-500/20 text-red-300'
-                    }`}>
-                      {row.outcome || '—'}
-                    </span>
+                    }`}>{row.outcome || '—'}</span>
                   </td>
                   <td className="px-4 py-3 text-right num text-gray-300 hidden sm:table-cell">{row.size.toFixed(2)}</td>
                   <td className="px-4 py-3 text-right num text-gray-400 hidden md:table-cell">{row.avgPrice.toFixed(3)}</td>
