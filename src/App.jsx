@@ -9,12 +9,14 @@ import { HoldingsTable } from './components/HoldingsTable'
 import { TransactionManager } from './components/TransactionManager'
 import { CsvImporter } from './components/CsvImporter'
 import { PolymarketTracker } from './components/PolymarketTracker'
+import { Analytics } from './components/Analytics'
 import { supabase } from './lib/supabase'
 import { lookupCoinGeckoId } from './lib/priceService'
 
 const TABS = [
   { id: 'Dashboard',    label: 'Dashboard',   short: 'Home',   icon: IconDashboard },
   { id: 'Holdings',     label: 'Holdings',    short: 'Assets', icon: IconHoldings },
+  { id: 'Analytics',   label: 'Analytics',   short: 'Stats',  icon: IconAnalytics },
   { id: 'Transactions', label: 'Transactions',short: 'Txs',    icon: IconTxs },
   { id: 'Import CSV',   label: 'Import CSV',  short: 'Import', icon: IconImport },
   { id: 'Polymarket',   label: 'Polymarket',  short: 'PMKT',   icon: IconPmkt },
@@ -25,6 +27,14 @@ function IconDashboard({ cls }) {
     <svg className={cls} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
       <rect x="3" y="3" width="7" height="7" /><rect x="14" y="3" width="7" height="7" />
       <rect x="14" y="14" width="7" height="7" /><rect x="3" y="14" width="7" height="7" />
+    </svg>
+  )
+}
+function IconAnalytics({ cls }) {
+  return (
+    <svg className={cls} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <line x1="18" y1="20" x2="18" y2="10" /><line x1="12" y1="20" x2="12" y2="4" />
+      <line x1="6" y1="20" x2="6" y2="14" /><line x1="2" y1="20" x2="22" y2="20" />
     </svg>
   )
 }
@@ -224,6 +234,16 @@ export default function App() {
               marketData={marketData}
               onUpdateAsset={updateAsset}
               onAutoFix={autoFixAssets}
+            />
+          )}
+
+          {activeTab === 'Analytics' && (
+            <Analytics
+              transactions={transactions}
+              assets={assets}
+              prices={prices}
+              changes={changes}
+              marketData={marketData}
             />
           )}
 
