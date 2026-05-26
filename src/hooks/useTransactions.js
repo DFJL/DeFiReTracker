@@ -8,13 +8,24 @@ export function useTransactions(portfolioId) {
   const load = useCallback(async () => {
     if (!portfolioId) { setTransactions([]); return }
     setLoading(true)
-    const { data } = await supabase
-      .from('transactions')
-      .select('*, asset:assets(*)')
-      .eq('portfolio_id', portfolioId)
-      .order('date', { ascending: false })
-      .limit(10000)
-    setTransactions(data ?? [])
+    // Paginate to bypass PostgREST's server-side max-rows cap (default 1000).
+    // .range() uses offset pagination, so each page fetches a clean next chunk.
+    const PAGE = 1000
+    let offset = 0
+    const all = []
+    while (true) {
+      const { data, error } = await supabase
+        .from('transactions')
+        .select('*, asset:assets(*)')
+        .eq('portfolio_id', portfolioId)
+        .order('date', { ascending: false })
+        .range(offset, offset + PAGE - 1)
+      if (error || !data || data.length === 0) break
+      all.push(...data)
+      if (data.length < PAGE) break
+      offset += PAGE
+    }
+    setTransactions(all)
     setLoading(false)
   }, [portfolioId])
 

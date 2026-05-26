@@ -127,16 +127,18 @@ export default function App() {
     refreshPrices()
   }
 
-  // Auto-fix assets with missing prices once per session, after first price load completes
+  // Auto-fix assets with missing prices once per session, after first price load completes.
+  // Skip when stale=true — prices just failed to load (likely 429), so every asset looks
+  // "unlinked" and firing 50+ /search calls would make the rate-limit even worse.
   const autoFixRanRef = useRef(false)
   useEffect(() => {
     if (autoFixRanRef.current) return
-    if (loadingPrices || !assets.length) return
+    if (loadingPrices || stale || !assets.length) return
     const unlinked = assets.filter(a => prices[a.coingecko_id] == null)
     if (!unlinked.length) return
     autoFixRanRef.current = true
     autoFixAssets()
-  }, [loadingPrices, assets, prices])
+  }, [loadingPrices, stale, assets, prices])
 
   const activeTabDef = TABS.find(t => t.id === activeTab) ?? TABS[0]
 
