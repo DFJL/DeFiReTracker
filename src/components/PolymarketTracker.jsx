@@ -22,15 +22,13 @@ export function PolymarketTracker({ portfolioId, portfolioName, onSummaryChange 
   })
   const [input, setInput]         = useState('')
   const [positions, setPositions] = useState([])
-  const [netDeposited, setNetDeposited] = useState(null)
   const [proxyWallets, setProxyWallets] = useState([])
-  const [extraDebug, setExtraDebug] = useState(null)
   const [loading, setLoading]     = useState(false)
   const [error, setError]         = useState(null)
   const [consolidate, setConsolidate] = useState(
     () => localStorage.getItem(consolidateKey(portfolioId)) === 'true'
   )
-  // PUSD = idle USDC in Polymarket — not accessible via public API, entered manually
+  // PUSD = Polymarket available balance — locked in CTF Exchange, no public API
   const [pusdInput, setPusdInput] = useState(
     () => localStorage.getItem(pusdKey(portfolioId)) ?? ''
   )
@@ -44,7 +42,6 @@ export function PolymarketTracker({ portfolioId, portfolioName, onSummaryChange 
     setConsolidate(localStorage.getItem(consolidateKey(portfolioId)) === 'true')
     setPusdInput(localStorage.getItem(pusdKey(portfolioId)) ?? '')
     setPositions([])
-    setNetDeposited(null)
     setProxyWallets([])
     setError(null)
   }, [portfolioId])
@@ -71,16 +68,12 @@ export function PolymarketTracker({ portfolioId, portfolioName, onSummaryChange 
   }
 
   useEffect(() => {
-    if (!addresses.length) { setPositions([]); setNetDeposited(null); return }
+    if (!addresses.length) { setPositions([]); return }
     setLoading(true); setError(null)
     Promise.all(addresses.map(fetchPolymarketPositions))
       .then(results => {
         setPositions(results.flatMap(r => r.positions))
-        const totalDeposited = results.reduce((s, r) => s + r.netDeposited, 0)
-        setNetDeposited(totalDeposited > 0 ? totalDeposited : null)
         setProxyWallets(results.map(r => r.proxyWallet).filter(Boolean))
-        // collect debug from first result only
-        if (results[0]?._debug) setExtraDebug(results[0]._debug)
       })
       .catch(e => setError(e.message))
       .finally(() => setLoading(false))
@@ -90,12 +83,13 @@ export function PolymarketTracker({ portfolioId, portfolioName, onSummaryChange 
 
   const positionsValue = open.reduce((s, p) => s + Number(p.currentValue ?? (Number(p.size) * Number(p.currentPrice ?? 0))), 0)
   const totalValue     = positionsValue + manualPusd
-  const totalInvested  = netDeposited
-  const totalPnl       = totalInvested != null ? totalValue - totalInvested : null
+  // Cost basis = sum of initialValue (avgPrice × size) for all open positions
+  const totalInvested  = open.reduce((s, p) => s + Number(p.initialValue ?? (Number(p.size) * Number(p.avgPrice ?? 0))), 0)
+  const totalPnl       = totalValue - totalInvested
 
   useEffect(() => {
     onSummaryChange?.(consolidate && (open.length > 0 || manualPusd > 0)
-      ? { value: totalValue, invested: totalInvested ?? totalValue }
+      ? { value: totalValue, invested: totalInvested }
       : null
     )
   }, [consolidate, totalValue, totalInvested, open.length, manualPusd])
@@ -144,8 +138,7 @@ export function PolymarketTracker({ portfolioId, portfolioName, onSummaryChange 
           </button>
         </div>
 
-        {/* PUSD — Polymarket's available balance is in the CTF Exchange contract,
-            not queryable via any public API. User enters it manually from the Portfolio page. */}
+        {/* PUSD: Polymarket available balance sits in CTF Exchange contract — no public API */}
         <div className="flex items-center gap-2 mt-3 pt-3 border-t border-border">
           <label className="text-xs text-gray-500 whitespace-nowrap">PUSD balance</label>
           <input
@@ -158,7 +151,7 @@ export function PolymarketTracker({ portfolioId, portfolioName, onSummaryChange 
             placeholder="0.00"
             className="w-32 bg-surface border border-border rounded px-2 py-1 text-sm text-gray-200 placeholder-gray-600 focus:outline-none focus:border-accent"
           />
-          <span className="text-xs text-gray-600">not available via API — enter from Polymarket → Portfolio</span>
+          <span className="text-xs text-gray-600">not in public API — copy from Polymarket → Portfolio</span>
         </div>
       </div>
 
@@ -182,21 +175,12 @@ export function PolymarketTracker({ portfolioId, portfolioName, onSummaryChange 
               )}
             </div>
             <div className="bg-surface-1 border border-border rounded-lg px-4 py-3">
-              <p className="text-xs text-gray-500 mb-0.5">Invested</p>
-              <p className="text-xl font-semibold num">
-                {totalInvested != null ? fmtUsd(totalInvested) : <span className="text-gray-600 text-base">—</span>}
-              </p>
-              {totalInvested == null && (
-                <p className="text-xs text-gray-600 mt-0.5">Not available from API</p>
-              )}
+              <p className="text-xs text-gray-500 mb-0.5">Cost Basis</p>
+              <p className="text-xl font-semibold num">{fmtUsd(totalInvested)}</p>
             </div>
             <div className="bg-surface-1 border border-border rounded-lg px-4 py-3">
               <p className="text-xs text-gray-500 mb-0.5">Total PnL</p>
-              {totalPnl != null ? (
-                <p className={`text-xl font-semibold num ${pnlClass(totalPnl)}`}>{fmtUsd(totalPnl)}</p>
-              ) : (
-                <p className="text-xl font-semibold num text-gray-600">—</p>
-              )}
+              <p className={`text-xl font-semibold num ${pnlClass(totalPnl)}`}>{fmtUsd(totalPnl)}</p>
             </div>
           </div>
 
@@ -211,9 +195,7 @@ export function PolymarketTracker({ portfolioId, portfolioName, onSummaryChange 
             {showDebug && (
               <pre className="mt-2 text-xs text-gray-400 overflow-x-auto max-h-64 leading-relaxed">
                 {JSON.stringify({
-                  netDeposited,
                   proxyWallets,
-                  _debug: extraDebug,
                   sample: positions.slice(0, 3).map(p => ({
                     size: p.size, avgPrice: p.avgPrice, currentPrice: p.currentPrice,
                     initialValue: p.initialValue, currentValue: p.currentValue,
