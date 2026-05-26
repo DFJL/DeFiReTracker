@@ -149,8 +149,7 @@ export function Dashboard({ transactions, assets, prices, changes, pmktSummary }
       </div>
 
       {/* Secondary stats */}
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 md:gap-3">
-        <StatBox label="Total Invested" value={fmtUsd(totalGrossInvested + (pmktSummary?.invested ?? 0))} sub="all buys, ever" />
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 md:gap-3">
         <StatBox label="Cost Basis (held)" value={fmtUsd(combinedInvested)} sub="current positions" />
         <StatBox
           label="Unrealized PnL"
