@@ -60,7 +60,7 @@ function ColHeader({ label, col, sort, onSort, className = '' }) {
   )
 }
 
-export function HoldingsTable({ transactions, assets, prices, changes, marketData = {}, pmktPositions = [], onUpdateAsset, onAutoFix }) {
+export function HoldingsTable({ transactions, assets, prices, changes, marketData = {}, pmktPositions = [], onUpdateAsset, onAutoFix, onAudit }) {
   const [sort, setSort]               = useState({ col: 'value', dir: 'desc' })
   const [search, setSearch]           = useState('')
   const [catFilter, setCatFilter]     = useState('')
@@ -244,6 +244,18 @@ export function HoldingsTable({ transactions, assets, prices, changes, marketDat
             </button>
           )}
           <span className="text-xs text-gray-600">{rows.length} of {allRows.length}</span>
+          {onAudit && (
+            <button
+              onClick={onAudit}
+              className="ml-auto flex items-center gap-1.5 px-2.5 py-1.5 text-xs border border-border text-gray-500 hover:border-accent hover:text-accent rounded transition-colors"
+              title="Detect duplicates, price errors and other data quality issues"
+            >
+              <svg className="w-3 h-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/>
+              </svg>
+              Audit Data
+            </button>
+          )}
         </div>
       )}
 
