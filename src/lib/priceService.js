@@ -1,20 +1,28 @@
 import { supabase } from './supabase'
 
 const COINGECKO_BASE = 'https://api.coingecko.com/api/v3'
-const CACHE_TTL_MS = 60_000
+const CACHE_TTL_MS   = 60_000
 
-let lastFetchedAt = null
+let lastFetchedAt  = null
+let retryAfter     = 0          // absolute ms timestamp — don't fetch before this
 let inFlightPromise = null
-let cachedChanges = {}
+let cachedPrices   = {}         // last known-good prices, survive across TTL windows
+let cachedChanges  = {}
 let cachedMarketData = {}
 
 export async function fetchPrices(coingeckoIds) {
   if (!coingeckoIds.length) return { prices: {}, changes: {}, marketData: {} }
 
   const now = Date.now()
-  if (lastFetchedAt && now - lastFetchedAt < CACHE_TTL_MS) {
-    const prices = await readFromDbCache(coingeckoIds)
-    return { prices, changes: cachedChanges, marketData: cachedMarketData }
+
+  // Within TTL or inside backoff window: serve from memory + fill gaps from DB
+  if ((lastFetchedAt && now - lastFetchedAt < CACHE_TTL_MS) || now < retryAfter) {
+    const missing = coingeckoIds.filter(id => !(id in cachedPrices))
+    if (missing.length) {
+      const db = await readFromDbCache(missing)
+      cachedPrices = { ...cachedPrices, ...db }
+    }
+    return { prices: { ...cachedPrices }, changes: cachedChanges, marketData: cachedMarketData }
   }
 
   if (inFlightPromise) return inFlightPromise
@@ -26,7 +34,13 @@ export async function fetchPrices(coingeckoIds) {
         `${COINGECKO_BASE}/coins/markets?vs_currency=usd&ids=${ids}` +
         `&sparkline=true&price_change_percentage=1h,7d,30d&per_page=250`
       )
-      if (!res.ok) throw new Error(`CoinGecko ${res.status}`)
+
+      // Rate-limit: back off 5 minutes; other errors: back off 2 minutes
+      if (!res.ok) {
+        retryAfter = Date.now() + (res.status === 429 ? 5 * 60_000 : 2 * 60_000)
+        throw new Error(`CoinGecko ${res.status}`)
+      }
+
       const data = await res.json()
 
       const upserts = data.map(coin => ({
@@ -40,13 +54,13 @@ export async function fetchPrices(coingeckoIds) {
       }
 
       lastFetchedAt = Date.now()
-      const prices = {}
-      const changes = {}
+      const prices     = {}
+      const changes    = {}
       const marketData = {}
 
       for (const coin of data) {
-        prices[coin.id] = coin.current_price
-        changes[coin.id] = coin.price_change_percentage_24h ?? null
+        prices[coin.id]     = coin.current_price
+        changes[coin.id]    = coin.price_change_percentage_24h ?? null
         marketData[coin.id] = {
           change1h:  coin.price_change_percentage_1h_in_currency ?? null,
           change24h: coin.price_change_percentage_24h ?? null,
@@ -56,16 +70,28 @@ export async function fetchPrices(coingeckoIds) {
         }
       }
 
-      // Fallback for IDs CoinGecko doesn't know
+      // IDs CoinGecko returned nothing for → fill from DB cache
       const missingIds = coingeckoIds.filter(id => !(id in prices))
       if (missingIds.length) {
-        const cached = await readFromDbCache(missingIds)
-        Object.assign(prices, cached)
+        const db = await readFromDbCache(missingIds)
+        Object.assign(prices, db)
       }
 
-      cachedChanges = changes
+      // Persist to in-memory cache (merge so previously-known prices aren't wiped)
+      cachedPrices   = { ...cachedPrices, ...prices }
+      cachedChanges  = changes
       cachedMarketData = marketData
-      return { prices, changes, marketData }
+      return { prices: { ...cachedPrices }, changes, marketData }
+
+    } catch (err) {
+      // Any failure: serve stale in-memory prices + fill gaps from DB
+      lastFetchedAt = Date.now()  // prevent tight retry loop
+      const missing = coingeckoIds.filter(id => !(id in cachedPrices))
+      if (missing.length) {
+        const db = await readFromDbCache(missing)
+        cachedPrices = { ...cachedPrices, ...db }
+      }
+      return { prices: { ...cachedPrices }, changes: cachedChanges, marketData: cachedMarketData }
     } finally {
       inFlightPromise = null
     }

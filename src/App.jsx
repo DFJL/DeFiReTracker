@@ -1,4 +1,4 @@
-import { useState, useMemo, useEffect } from 'react'
+import { useState, useMemo, useEffect, useRef } from 'react'
 import { usePortfolios } from './hooks/usePortfolios'
 import { useTransactions } from './hooks/useTransactions'
 import { usePrices } from './hooks/usePrices'
@@ -93,7 +93,7 @@ export default function App() {
   }, [transactions])
 
   const coingeckoIds = useMemo(() => assets.map(a => a.coingecko_id), [assets])
-  const { prices, changes, marketData, lastUpdated, loading: loadingPrices, refresh: refreshPrices } = usePrices(coingeckoIds)
+  const { prices, changes, marketData, lastUpdated, loading: loadingPrices, stale, refresh: refreshPrices } = usePrices(coingeckoIds)
 
   // Polymarket — lifted to app level so positions flow into Holdings & Txs
   const pmkt = usePolymarket(portfolioId)
@@ -124,6 +124,17 @@ export default function App() {
     reloadTx()
     refreshPrices()
   }
+
+  // Auto-fix assets with missing prices once per session, after first price load completes
+  const autoFixRanRef = useRef(false)
+  useEffect(() => {
+    if (autoFixRanRef.current) return
+    if (loadingPrices || !assets.length) return
+    const unlinked = assets.filter(a => prices[a.coingecko_id] == null)
+    if (!unlinked.length) return
+    autoFixRanRef.current = true
+    autoFixAssets()
+  }, [loadingPrices, assets, prices])
 
   const activeTabDef = TABS.find(t => t.id === activeTab) ?? TABS[0]
 
@@ -162,16 +173,25 @@ export default function App() {
           </div>
 
           <div className="flex items-center gap-2 text-xs text-gray-500 flex-shrink-0">
-            {lastUpdated && (
+            {lastUpdated && !stale && (
               <span className="hidden lg:inline">
                 Updated {lastUpdated.toLocaleTimeString()}
+              </span>
+            )}
+            {stale && (
+              <span className="hidden lg:inline text-yellow-600" title="Using cached prices — live fetch failed">
+                Prices stale
               </span>
             )}
             <button
               onClick={refreshPrices}
               disabled={loadingPrices}
-              title="Refresh prices"
-              className="px-2 py-1 rounded border border-border hover:border-accent hover:text-accent transition-colors disabled:opacity-40"
+              title={stale ? 'Live prices unavailable — click to retry' : 'Refresh prices'}
+              className={`px-2 py-1 rounded border transition-colors disabled:opacity-40 ${
+                stale
+                  ? 'border-yellow-700 text-yellow-600 hover:border-yellow-500 hover:text-yellow-400'
+                  : 'border-border hover:border-accent hover:text-accent'
+              }`}
             >
               {loadingPrices ? '…' : '↻'}
             </button>
