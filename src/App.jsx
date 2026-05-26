@@ -9,6 +9,7 @@ import { TransactionManager } from './components/TransactionManager'
 import { CsvImporter } from './components/CsvImporter'
 import { PolymarketTracker } from './components/PolymarketTracker'
 import { supabase } from './lib/supabase'
+import { computeAssetPnl } from './utils/pnl'
 
 const TABS = ['Dashboard', 'Holdings', 'Transactions', 'Import CSV', 'Polymarket']
 
@@ -35,6 +36,15 @@ export default function App() {
 
   const coingeckoIds = useMemo(() => assets.map(a => a.coingecko_id), [assets])
   const { prices, changes, lastUpdated, loading: loadingPrices, refresh: refreshPrices } = usePrices(coingeckoIds)
+
+  // Cost basis of PMKT transactions = the actual USDC deposited into Polymarket
+  const pmktCostBasis = useMemo(() => {
+    const pmktAsset = assets.find(a => a.coingecko_id === 'polymarket-usd')
+    if (!pmktAsset) return null
+    const pmktTxs = transactions.filter(t => t.asset_id === pmktAsset.id)
+    if (!pmktTxs.length) return null
+    return computeAssetPnl(pmktTxs, 1).costBasis
+  }, [assets, transactions])
 
   async function handlePortfolioDelete(id) {
     await deletePortfolio(id)
@@ -162,6 +172,7 @@ export default function App() {
               portfolioId={portfolioId}
               portfolioName={portfolios.find(p => p.id === portfolioId)?.name}
               onSummaryChange={setPmktSummary}
+              pmktCostBasis={pmktCostBasis}
             />
           )}
         </div>

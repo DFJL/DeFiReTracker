@@ -19,13 +19,14 @@ function AddressTag({ address, onRemove }) {
   )
 }
 
-export function PolymarketTracker({ portfolioId, portfolioName, onSummaryChange }) {
+export function PolymarketTracker({ portfolioId, portfolioName, onSummaryChange, pmktCostBasis }) {
   const [addresses, setAddresses] = useState(() => {
     try { return JSON.parse(localStorage.getItem(addrKey(portfolioId)) ?? '[]') } catch { return [] }
   })
   const [input, setInput]       = useState('')
   const [positions, setPositions] = useState([])
   const [cashBalance, setCashBalance] = useState(0)
+  const [proxyWallets, setProxyWallets] = useState([])
   const [loading, setLoading]   = useState(false)
   const [error, setError]       = useState(null)
   const [consolidate, setConsolidate] = useState(
@@ -40,6 +41,7 @@ export function PolymarketTracker({ portfolioId, portfolioName, onSummaryChange 
     setConsolidate(localStorage.getItem(consolidateKey(portfolioId)) === 'true')
     setPositions([])
     setCashBalance(0)
+    setProxyWallets([])
     setError(null)
   }, [portfolioId])
 
@@ -71,6 +73,7 @@ export function PolymarketTracker({ portfolioId, portfolioName, onSummaryChange 
       .then(results => {
         setPositions(results.flatMap(r => r.positions))
         setCashBalance(results.reduce((s, r) => s + r.cashBalance, 0))
+        setProxyWallets(results.map(r => r.proxyWallet).filter(Boolean))
       })
       .catch(e => setError(e.message))
       .finally(() => setLoading(false))
@@ -81,7 +84,9 @@ export function PolymarketTracker({ portfolioId, portfolioName, onSummaryChange 
 
   const positionsValue = open.reduce((s, p) => s + Number(p.currentValue ?? (Number(p.size) * Number(p.currentPrice ?? p.price ?? 0))), 0)
   const totalValue     = positionsValue + cashBalance
-  const totalInvested  = open.reduce((s, p) => s + Number(p.initialValue ?? (Number(p.size) * Number(p.avgPrice ?? 0))), 0)
+  // Use portfolio PMKT cost basis (actual deposits) when available;
+  // fall back to summing position initialValues (which inflates due to reinvested winnings)
+  const totalInvested  = pmktCostBasis ?? open.reduce((s, p) => s + Number(p.initialValue ?? (Number(p.size) * Number(p.avgPrice ?? 0))), 0)
   const totalPnl       = totalValue - totalInvested
 
   // Notify parent so Dashboard can consolidate
@@ -177,12 +182,17 @@ export function PolymarketTracker({ portfolioId, portfolioName, onSummaryChange 
               </button>
               {showDebug && (
                 <pre className="mt-2 text-xs text-gray-400 overflow-x-auto max-h-64 leading-relaxed">
-                  {JSON.stringify(positions.slice(0, 5).map(p => ({
-                    size: p.size, avgPrice: p.avgPrice, currentPrice: p.currentPrice ?? p.price,
-                    initialValue: p.initialValue, currentValue: p.currentValue,
-                    redeemed: p.redeemed, closed: p.closed, outcome: p.outcome,
-                    title: (p.title ?? p.question ?? '').slice(0, 60),
-                  })), null, 2)}
+                  {JSON.stringify({
+                    cashBalance,
+                    pmktCostBasis,
+                    proxyWallets,
+                    sample: positions.slice(0, 3).map(p => ({
+                      size: p.size, avgPrice: p.avgPrice, currentPrice: p.currentPrice ?? p.price,
+                      initialValue: p.initialValue, currentValue: p.currentValue,
+                      redeemed: p.redeemed, closed: p.closed, outcome: p.outcome,
+                      title: (p.title ?? p.question ?? '').slice(0, 50),
+                    })),
+                  }, null, 2)}
                 </pre>
               )}
             </div>

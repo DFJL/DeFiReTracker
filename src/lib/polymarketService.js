@@ -8,5 +8,6 @@ export async function fetchPolymarketPositions(address) {
   if (data?.error) throw new Error(data.error)
   const positions = Array.isArray(data) ? data : (data?.positions ?? [])
   const cashBalance = data?.cashBalance ?? 0
-  return { positions, cashBalance }
+  const proxyWallet = data?.proxyWallet ?? null
+  return { positions, cashBalance, proxyWallet }
 }
