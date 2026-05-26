@@ -10,6 +10,7 @@ import { TransactionManager } from './components/TransactionManager'
 import { CsvImporter } from './components/CsvImporter'
 import { PolymarketTracker } from './components/PolymarketTracker'
 import { supabase } from './lib/supabase'
+import { lookupCoinGeckoId } from './lib/priceService'
 
 const TABS = [
   { id: 'Dashboard',    label: 'Dashboard',   short: 'Home',   icon: IconDashboard },
@@ -96,6 +97,22 @@ export default function App() {
     const { error } = await supabase.from('assets').update(updates).eq('id', assetId)
     if (!error) { reloadTx(); refreshPrices() }
     return { error }
+  }
+
+  async function autoFixAssets() {
+    const unlinked = assets.filter(a => prices[a.coingecko_id] == null)
+    if (!unlinked.length) return
+    const lookups = await Promise.all(unlinked.map(a => lookupCoinGeckoId(a.symbol)))
+    for (let i = 0; i < unlinked.length; i++) {
+      const match = lookups[i]
+      if (match && match.id !== unlinked[i].coingecko_id) {
+        await supabase.from('assets')
+          .update({ coingecko_id: match.id, name: match.name })
+          .eq('id', unlinked[i].id)
+      }
+    }
+    reloadTx()
+    refreshPrices()
   }
 
   const activeTabDef = TABS.find(t => t.id === activeTab) ?? TABS[0]
@@ -205,6 +222,7 @@ export default function App() {
               changes={changes}
               pmktPositions={pmkt.open}
               onUpdateAsset={updateAsset}
+              onAutoFix={autoFixAssets}
             />
           )}
 

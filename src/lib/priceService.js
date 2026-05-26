@@ -75,3 +75,17 @@ async function readFromDbCache(coingeckoIds) {
 export function resetPriceCache() {
   lastFetchedAt = null
 }
+
+// Search CoinGecko for the best matching coin by symbol.
+// Returns { id, name } or null if nothing found.
+export async function lookupCoinGeckoId(symbol) {
+  try {
+    const res = await fetch(`${COINGECKO_BASE}/search?query=${encodeURIComponent(symbol)}`)
+    if (!res.ok) return null
+    const { coins = [] } = await res.json()
+    const match = coins.find(c => c.symbol.toUpperCase() === symbol.toUpperCase())
+    return match ? { id: match.id, name: match.name } : null
+  } catch {
+    return null
+  }
+}
