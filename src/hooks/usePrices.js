@@ -25,7 +25,7 @@ export function usePrices(coingeckoIds) {
   }
 
   useEffect(() => {
-    refresh()
+    refresh(true) // force a live fetch whenever the set of tracked assets changes
     timerRef.current = setInterval(() => refresh(), REFRESH_INTERVAL)
     return () => clearInterval(timerRef.current)
   }, [JSON.stringify(coingeckoIds.slice().sort())])
