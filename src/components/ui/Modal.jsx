@@ -10,8 +10,8 @@ export function Modal({ title, onClose, children }) {
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center">
       <div className="absolute inset-0 bg-black/60" onClick={onClose} />
-      <div className="relative z-10 bg-surface-1 border border-border rounded-lg w-full max-w-lg mx-4 shadow-2xl">
-        <div className="flex items-center justify-between px-5 py-4 border-b border-border">
+      <div className="relative z-10 bg-surface-1 border border-border rounded-lg w-full max-w-lg mx-4 shadow-2xl max-h-[90vh] flex flex-col">
+        <div className="flex items-center justify-between px-5 py-4 border-b border-border flex-shrink-0">
           <h2 className="text-sm font-semibold text-gray-200">{title}</h2>
           <button
             onClick={onClose}
@@ -20,7 +20,7 @@ export function Modal({ title, onClose, children }) {
             ×
           </button>
         </div>
-        <div className="p-5">{children}</div>
+        <div className="p-5 overflow-y-auto">{children}</div>
       </div>
     </div>
   )

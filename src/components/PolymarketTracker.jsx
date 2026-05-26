@@ -95,23 +95,23 @@ export function PolymarketTracker({ portfolioId, portfolioName, pmkt }) {
 
       {!loading && !error && addresses.length > 0 && (
         <>
-          <div className="grid grid-cols-3 gap-3">
-            <div className="bg-surface-1 border border-border rounded-lg px-4 py-3">
-              <p className="text-xs text-gray-500 mb-0.5">Current Value</p>
-              <p className="text-xl font-semibold num">{fmtUsd(totalValue)}</p>
+          <div className="grid grid-cols-3 gap-2 md:gap-3">
+            <div className="bg-surface-1 border border-border rounded-lg px-3 sm:px-4 py-3 min-w-0">
+              <p className="text-xs text-gray-500 mb-0.5 truncate">Current Value</p>
+              <p className="text-base sm:text-xl font-semibold num truncate">{fmtUsd(totalValue)}</p>
               {manualPusd > 0 && (
-                <p className="text-xs text-gray-500 mt-0.5">
-                  {fmtUsd(positionsValue)} positions · {fmtUsd(manualPusd)} PUSD
+                <p className="text-xs text-gray-500 mt-0.5 hidden sm:block">
+                  {fmtUsd(positionsValue)} pos · {fmtUsd(manualPusd)} PUSD
                 </p>
               )}
             </div>
-            <div className="bg-surface-1 border border-border rounded-lg px-4 py-3">
-              <p className="text-xs text-gray-500 mb-0.5">Cost Basis</p>
-              <p className="text-xl font-semibold num">{fmtUsd(totalInvested)}</p>
+            <div className="bg-surface-1 border border-border rounded-lg px-3 sm:px-4 py-3 min-w-0">
+              <p className="text-xs text-gray-500 mb-0.5 truncate">Cost Basis</p>
+              <p className="text-base sm:text-xl font-semibold num truncate">{fmtUsd(totalInvested)}</p>
             </div>
-            <div className="bg-surface-1 border border-border rounded-lg px-4 py-3">
-              <p className="text-xs text-gray-500 mb-0.5">Total PnL</p>
-              <p className={`text-xl font-semibold num ${pnlClass(totalPnl)}`}>{fmtUsd(totalPnl)}</p>
+            <div className="bg-surface-1 border border-border rounded-lg px-3 sm:px-4 py-3 min-w-0">
+              <p className="text-xs text-gray-500 mb-0.5 truncate">Total PnL</p>
+              <p className={`text-base sm:text-xl font-semibold num truncate ${pnlClass(totalPnl)}`}>{fmtUsd(totalPnl)}</p>
             </div>
           </div>
 
@@ -147,10 +147,10 @@ export function PolymarketTracker({ portfolioId, portfolioName, pmkt }) {
                 <thead>
                   <tr className="border-b border-border text-xs text-gray-500 uppercase tracking-wider">
                     <th className="px-4 py-3 text-left">Market</th>
-                    <th className="px-4 py-3 text-left">Outcome</th>
-                    <th className="px-4 py-3 text-right">Shares</th>
-                    <th className="px-4 py-3 text-right">Avg Price</th>
-                    <th className="px-4 py-3 text-right">Cur Price</th>
+                    <th className="px-4 py-3 text-left hidden sm:table-cell">Outcome</th>
+                    <th className="px-4 py-3 text-right hidden sm:table-cell">Shares</th>
+                    <th className="px-4 py-3 text-right hidden md:table-cell">Avg Price</th>
+                    <th className="px-4 py-3 text-right hidden md:table-cell">Cur Price</th>
                     <th className="px-4 py-3 text-right">Value</th>
                     <th className="px-4 py-3 text-right">PnL</th>
                   </tr>
@@ -166,18 +166,23 @@ export function PolymarketTracker({ portfolioId, portfolioName, pmkt }) {
                     return (
                       <tr key={i} className="hover:bg-surface-2 transition-colors">
                         <td className="px-4 py-3 max-w-xs">
+                          <div className="flex items-center gap-1.5 mb-0.5 sm:hidden">
+                            <span className={`text-xs px-1.5 py-0.5 rounded ${
+                              outcome.toLowerCase() === 'yes' ? 'bg-green-500/20 text-green-300' : 'bg-red-500/20 text-red-300'
+                            }`}>{outcome}</span>
+                          </div>
                           <div className="text-gray-200 text-xs leading-snug line-clamp-2">{title}</div>
                         </td>
-                        <td className="px-4 py-3">
+                        <td className="px-4 py-3 hidden sm:table-cell">
                           <span className={`text-xs px-1.5 py-0.5 rounded ${
                             outcome.toLowerCase() === 'yes' ? 'bg-green-500/20 text-green-300' : 'bg-red-500/20 text-red-300'
                           }`}>
                             {outcome}
                           </span>
                         </td>
-                        <td className="px-4 py-3 text-right num text-gray-300">{Number(p.size ?? 0).toFixed(2)}</td>
-                        <td className="px-4 py-3 text-right num text-gray-400">{Number(p.avgPrice ?? 0).toFixed(3)}</td>
-                        <td className="px-4 py-3 text-right num text-gray-400">{Number(p.currentPrice ?? 0).toFixed(3)}</td>
+                        <td className="px-4 py-3 text-right num text-gray-300 hidden sm:table-cell">{Number(p.size ?? 0).toFixed(2)}</td>
+                        <td className="px-4 py-3 text-right num text-gray-400 hidden md:table-cell">{Number(p.avgPrice ?? 0).toFixed(3)}</td>
+                        <td className="px-4 py-3 text-right num text-gray-400 hidden md:table-cell">{Number(p.currentPrice ?? 0).toFixed(3)}</td>
                         <td className="px-4 py-3 text-right num text-gray-200">{fmtUsd(value)}</td>
                         <td className={`px-4 py-3 text-right num ${pnlClass(pnl)}`}>
                           <div>{fmtUsd(pnl)}</div>

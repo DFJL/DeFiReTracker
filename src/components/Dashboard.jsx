@@ -122,7 +122,7 @@ export function Dashboard({ transactions, assets, prices, changes, pmktSummary }
         <StatBox
           label="Total Profit / Loss"
           value={fmtUsd(totalUnrealized + totalRealized)}
-          sub={`Unrealized ${fmtUsd(totalUnrealized)}  ·  Realized ${fmtUsd(totalRealized)}`}
+          sub={<><span className="block">Unrlzd {fmtUsd(totalUnrealized)}</span><span className="block">Rlzd {fmtUsd(totalRealized)}</span></>}
           valueClass={pnlClass(totalUnrealized + totalRealized)}
         />
         <div className="bg-surface-1 border border-border rounded-lg px-4 py-3">

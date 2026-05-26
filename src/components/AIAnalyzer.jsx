@@ -64,20 +64,20 @@ export function AIAnalyzer({ portfolioData }) {
 
   return (
     <div className="bg-surface-1 border border-border rounded-lg overflow-hidden">
-      <div className="px-4 py-3 border-b border-border flex items-center justify-between">
+      <div className="px-4 py-3 border-b border-border flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
         <div className="flex items-center gap-2">
           <span className="text-xs font-semibold text-accent uppercase tracking-wider">AI Portfolio Advisor</span>
-          <span className="text-xs text-gray-600">powered by Claude</span>
+          <span className="text-xs text-gray-600 hidden sm:inline">powered by Claude</span>
         </div>
         <div className="flex gap-1">
           {modes.map(m => (
             <button
               key={m.key}
               onClick={() => setActiveMode(m.key)}
-              className={`px-2.5 py-1 text-xs rounded transition-colors ${
+              className={`flex-1 sm:flex-none px-2.5 py-1.5 text-xs rounded transition-colors ${
                 activeMode === m.key
                   ? 'bg-accent text-white'
-                  : 'text-gray-500 hover:text-gray-300'
+                  : 'text-gray-500 hover:text-gray-300 border border-border sm:border-0'
               }`}
             >
               {m.label}
