@@ -12,7 +12,7 @@ const TYPE_COLOR = {
   transfer_out: 'text-loss',
 }
 
-export function TransactionManager({ portfolioId, transactions, onUpsert, onDelete }) {
+export function TransactionManager({ portfolioId, transactions, onUpsert, onDelete, onBulkInsert }) {
   const [editing, setEditing] = useState(null)
   const [showForm, setShowForm] = useState(false)
   const [showNL, setShowNL] = useState(false)
@@ -24,8 +24,7 @@ export function TransactionManager({ portfolioId, transactions, onUpsert, onDele
     return result
   }
 
-  function handleNLParsed(parsed) {
-    // AI returns: { symbol, type, qty, price_usd, fee_usd, date, notes }
+  function handleNLParsedSingle(parsed) {
     setNlPrefill(parsed)
     setEditing(null)
     setShowNL(false)
@@ -119,8 +118,13 @@ export function TransactionManager({ portfolioId, transactions, onUpsert, onDele
       )}
 
       {showNL && (
-        <Modal title="Add Transaction via AI" onClose={() => setShowNL(false)}>
-          <NLTransactionModal onParsed={handleNLParsed} onClose={() => setShowNL(false)} />
+        <Modal title="Add via AI" onClose={() => setShowNL(false)}>
+          <NLTransactionModal
+            portfolioId={portfolioId}
+            onParsedSingle={handleNLParsedSingle}
+            onBulkSave={onBulkInsert}
+            onClose={() => setShowNL(false)}
+          />
         </Modal>
       )}
 
