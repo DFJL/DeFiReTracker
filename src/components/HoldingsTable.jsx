@@ -123,7 +123,7 @@ export function HoldingsTable({ transactions, assets, prices, changes, marketDat
 
   const rows = useMemo(() => {
     let r = allRows
-    if (hideDust) r = r.filter(row => (row.currentValue ?? 0) >= DUST_THRESHOLD)
+    if (hideDust) r = r.filter(row => !row.hasPrice || (row.currentValue ?? 0) >= DUST_THRESHOLD)
     if (search.trim()) {
       const q = search.trim().toLowerCase()
       r = r.filter(row => row.symbol?.toLowerCase().includes(q) || row.name?.toLowerCase().includes(q))
@@ -134,7 +134,7 @@ export function HoldingsTable({ transactions, assets, prices, changes, marketDat
       if (sort.col === 'asset')      { va = a.symbol ?? ''; vb = b.symbol ?? '' }
       if (sort.col === 'price')      { va = a.currentPrice ?? 0; vb = b.currentPrice ?? 0 }
       if (sort.col === 'change')     { va = getChange(a.coingecko_id) ?? -Infinity; vb = getChange(b.coingecko_id) ?? -Infinity }
-      if (sort.col === 'value')      { va = a.currentValue ?? 0; vb = b.currentValue ?? 0 }
+      if (sort.col === 'value')      { va = a.currentValue ?? -Infinity; vb = b.currentValue ?? -Infinity }
       if (sort.col === 'unrealized') { va = a.unrealizedPnl ?? -Infinity; vb = b.unrealizedPnl ?? -Infinity }
       if (sort.col === 'realized')   { va = a.realizedPnl ?? 0; vb = b.realizedPnl ?? 0 }
       if (sort.col === 'avgcost')    { va = a.avgCost ?? 0; vb = b.avgCost ?? 0 }

@@ -32,7 +32,7 @@ export function Dashboard({ transactions, assets, prices, changes, pmktSummary }
       .filter(Boolean)
   }, [transactions, assets, prices])
 
-  const { totalValue, totalUnrealized, totalRealized, totalInvested, totalGrossInvested, unrealizedPct, byCategory } =
+  const { totalValue, totalUnrealized, totalRealized, totalInvested, totalGrossInvested, unrealizedPct, byCategory, missingPriceCount } =
     useMemo(() => aggregatePortfolio(assetRows), [assetRows])
 
   const { change24hUsd, change24hPct } = useMemo(() => {
@@ -112,6 +112,11 @@ export function Dashboard({ transactions, assets, prices, changes, pmktSummary }
           <p className="text-xl font-semibold num leading-tight">
             {fmtUsd(combinedTotal)}
           </p>
+          {missingPriceCount > 0 && (
+            <p className="text-xs text-yellow-600 mt-0.5" title="These assets are excluded from the balance until prices load">
+              +{missingPriceCount} asset{missingPriceCount > 1 ? 's' : ''} price pending
+            </p>
+          )}
         </div>
         <StatBox
           label="24h Portfolio Change"

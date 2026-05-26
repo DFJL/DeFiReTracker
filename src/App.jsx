@@ -180,7 +180,7 @@ export default function App() {
                 Updated {lastUpdated.toLocaleTimeString()}
               </span>
             )}
-            {stale && (
+            {stale && !loadingPrices && (
               <span className="hidden lg:inline text-yellow-600" title="Using cached prices — live fetch failed">
                 Prices stale
               </span>
