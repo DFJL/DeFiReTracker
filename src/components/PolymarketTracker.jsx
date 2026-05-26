@@ -24,6 +24,7 @@ export function PolymarketTracker({ portfolioId, portfolioName, onSummaryChange,
   const [positions, setPositions] = useState([])
   const [cashBalance, setCashBalance] = useState(0)
   const [proxyWallets, setProxyWallets] = useState([])
+  const [explorer, setExplorer] = useState({})
   const [loading, setLoading]   = useState(false)
   const [error, setError]       = useState(null)
   const [consolidate, setConsolidate] = useState(
@@ -45,6 +46,7 @@ export function PolymarketTracker({ portfolioId, portfolioName, onSummaryChange,
     setPositions([])
     setCashBalance(0)
     setProxyWallets([])
+    setExplorer({})
     setError(null)
   }, [portfolioId])
 
@@ -77,6 +79,8 @@ export function PolymarketTracker({ portfolioId, portfolioName, onSummaryChange,
         setPositions(results.flatMap(r => r.positions))
         setCashBalance(results.reduce((s, r) => s + r.cashBalance, 0))
         setProxyWallets(results.map(r => r.proxyWallet).filter(Boolean))
+        // Merge explorer results from all addresses for debug
+        setExplorer(results.reduce((acc, r) => ({ ...acc, ...(r._explorer ?? {}) }), {}))
       })
       .catch(e => setError(e.message))
       .finally(() => setLoading(false))
@@ -205,6 +209,7 @@ export function PolymarketTracker({ portfolioId, portfolioName, onSummaryChange,
                     cashBalance,
                     pmktCostBasis,
                     proxyWallets,
+                    _explorer: explorer,
                     sample: positions.slice(0, 3).map(p => ({
                       size: p.size, avgPrice: p.avgPrice, currentPrice: p.currentPrice ?? p.price,
                       initialValue: p.initialValue, currentValue: p.currentValue,
