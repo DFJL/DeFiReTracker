@@ -5,10 +5,10 @@ import { NLTransactionModal } from './NLTransactionModal'
 import { fmtUsd, fmtQty, fmtDate } from '../utils/format'
 
 const TYPE_COLOR = {
-  buy: 'text-profit', earn: 'text-profit', transfer_in: 'text-profit',
-  sell: 'text-loss',  transfer_out: 'text-loss',
+  buy: 'text-profit', earn: 'text-profit', transfer_in: 'text-profit', deposit: 'text-profit',
+  sell: 'text-loss',  transfer_out: 'text-loss', withdrawal: 'text-loss',
 }
-const TX_TYPES = ['buy', 'sell', 'transfer_in', 'transfer_out', 'earn']
+const TX_TYPES = ['buy', 'sell', 'transfer_in', 'transfer_out', 'earn', 'deposit', 'withdrawal']
 
 function SortIcon({ active, dir }) {
   if (!active) return <span className="text-gray-700 ml-0.5">⇅</span>

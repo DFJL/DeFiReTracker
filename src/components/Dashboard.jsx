@@ -69,15 +69,27 @@ export function Dashboard({ transactions, assets, prices, changes, pmktSummary }
     return best
   }, [assetRows, changes, assetChanges, topPerfPeriod])
 
-  const combinedTotal         = totalValue + (pmktSummary?.value ?? 0)
-  const combinedInvested      = totalInvested + (pmktSummary?.invested ?? 0)
-  // Net external cash in = cost basis of held positions minus realized gains already extracted.
-  // This removes recycled capital (sell proceeds reinvested) from the invested figure.
-  const netCashIn             = combinedInvested - totalRealized
-  const totalPnl              = totalUnrealized + totalRealized
-  // ROI denominator: if netCashIn <= 0 the user has already extracted their initial capital (house money)
-  const roi                   = netCashIn > 0 ? (totalPnl / netCashIn) * 100 : null
-  const houseMoneyMode        = netCashIn <= 0 && totalRealized > 0
+  const combinedTotal    = totalValue + (pmktSummary?.value ?? 0)
+  const combinedInvested = totalInvested + (pmktSummary?.invested ?? 0)
+  const totalPnl         = totalUnrealized + totalRealized
+
+  // ── Cash-flow tracking (deposit / withdrawal transactions) ──────────────
+  const { totalDeposited, totalWithdrawn, hasDepositTracking } = useMemo(() => {
+    const deps = transactions.filter(t => t.type === 'deposit')
+    const wds  = transactions.filter(t => t.type === 'withdrawal')
+    return {
+      totalDeposited:     deps.reduce((s, t) => s + Number(t.qty), 0),
+      totalWithdrawn:     wds.reduce((s, t)  => s + Number(t.qty), 0),
+      hasDepositTracking: deps.length > 0 || wds.length > 0,
+    }
+  }, [transactions])
+
+  // Net cash in: exact when deposits are recorded, approximation otherwise
+  const netCashIn      = hasDepositTracking
+    ? totalDeposited - totalWithdrawn               // exact: real fiat flows
+    : combinedInvested - totalRealized              // approx: costBasis − realizedPnl
+  const houseMoneyMode = netCashIn <= 0 && (hasDepositTracking ? totalDeposited > 0 : totalRealized > 0)
+  const roi            = netCashIn > 0 ? (totalPnl / netCashIn) * 100 : null
 
   // Portfolio data for AI analyzer
   const portfolioData = useMemo(() => ({
@@ -163,10 +175,19 @@ export function Dashboard({ transactions, assets, prices, changes, pmktSummary }
       {/* Secondary stats */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 md:gap-3">
         <div className="bg-surface-1 border border-border rounded-lg px-4 py-3">
-          <p className="text-xs text-gray-500 mb-0.5">Net Invested</p>
+          <p className="text-xs text-gray-500 mb-0.5">
+            Net Invested
+            {!hasDepositTracking && (
+              <span className="ml-1 text-yellow-600" title="Add deposit/withdrawal transactions for an exact figure — currently estimated from cost basis">~est</span>
+            )}
+          </p>
           <p className="text-xl font-semibold num leading-tight">{fmtUsd(Math.max(0, netCashIn))}</p>
-          <p className="text-xs mt-0.5 text-gray-600" title="Cost basis of held positions minus realized gains extracted. Removes recycled capital from the figure.">
-            {houseMoneyMode ? 'House money — initial capital recouped' : `${fmtUsd(combinedInvested)} held at cost`}
+          <p className="text-xs mt-0.5 text-gray-600">
+            {houseMoneyMode
+              ? 'House money — initial capital recouped'
+              : hasDepositTracking
+                ? `${fmtUsd(totalWithdrawn)} withdrawn`
+                : `${fmtUsd(combinedInvested)} held at cost`}
           </p>
         </div>
         <div className="bg-surface-1 border border-border rounded-lg px-4 py-3">
@@ -185,18 +206,36 @@ export function Dashboard({ transactions, assets, prices, changes, pmktSummary }
             </>
           )}
         </div>
-        <StatBox
-          label="Unrealized PnL"
-          value={fmtUsd(totalUnrealized)}
-          sub={fmtPct(unrealizedPct)}
-          valueClass={pnlClass(totalUnrealized)}
-        />
-        <StatBox
-          label="Realized PnL"
-          value={fmtUsd(totalRealized)}
-          valueClass={pnlClass(totalRealized)}
-        />
+        <StatBox label="Unrealized PnL" value={fmtUsd(totalUnrealized)} sub={fmtPct(unrealizedPct)} valueClass={pnlClass(totalUnrealized)} />
+        <StatBox label="Realized PnL"   value={fmtUsd(totalRealized)}   valueClass={pnlClass(totalRealized)} />
       </div>
+
+      {/* Cash flow summary — only shown when deposits/withdrawals exist */}
+      {hasDepositTracking && (
+        <div className="bg-surface-1 border border-border rounded-lg px-4 py-3 flex flex-wrap gap-x-8 gap-y-2 items-center">
+          <span className="text-xs text-gray-500 uppercase tracking-wider flex-shrink-0">Cash Flows</span>
+          <div className="flex items-center gap-1.5">
+            <span className="w-2 h-2 rounded-full bg-green-500 flex-shrink-0" />
+            <span className="text-xs text-gray-500">Deposited</span>
+            <span className="text-sm font-semibold num text-gray-100 ml-1">{fmtUsd(totalDeposited)}</span>
+          </div>
+          <div className="flex items-center gap-1.5">
+            <span className="w-2 h-2 rounded-full bg-red-500 flex-shrink-0" />
+            <span className="text-xs text-gray-500">Withdrawn</span>
+            <span className="text-sm font-semibold num text-gray-100 ml-1">{fmtUsd(totalWithdrawn)}</span>
+          </div>
+          <div className="flex items-center gap-1.5">
+            <span className="text-xs text-gray-500">Net</span>
+            <span className={`text-sm font-semibold num ml-1 ${pnlClass(netCashIn)}`}>{fmtUsd(netCashIn)}</span>
+          </div>
+          <div className="flex items-center gap-1.5 ml-auto">
+            <span className="text-xs text-gray-600">Portfolio value vs net invested:</span>
+            <span className={`text-sm font-semibold num ${pnlClass(combinedTotal - netCashIn)}`}>
+              {fmtUsd(combinedTotal - netCashIn)}
+            </span>
+          </div>
+        </div>
+      )}
 
       {/* Timeline chart */}
       <PortfolioChart timeline={timeline} loading={loadingHistory} />
