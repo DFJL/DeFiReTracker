@@ -31,13 +31,14 @@ export function computeAssetPnl(transactions, currentPrice) {
 
   const qty = Math.max(0, totalQty)
   const avgCost = qty > 0 ? totalCost / qty : 0
-  const currentValue = qty * (currentPrice ?? 0)
+  const currentValue = currentPrice != null ? qty * currentPrice : null
   const unrealizedPnl = currentPrice != null ? (currentPrice - avgCost) * qty : null
   const unrealizedPct =
     avgCost > 0 && unrealizedPnl != null ? (unrealizedPnl / (avgCost * qty)) * 100 : null
 
   const costBasis = Math.max(0, totalCost)
-  return { qty, avgCost, costBasis, grossInvested, realizedPnl, unrealizedPnl, unrealizedPct, currentValue }
+  return { qty, avgCost, costBasis, grossInvested, realizedPnl, unrealizedPnl, unrealizedPct, currentValue,
+           hasPrice: currentPrice != null }
 }
 
 /**
@@ -64,6 +65,7 @@ export function aggregatePortfolio(assetRows) {
 
   const costBasis = totalValue - totalUnrealized
   const unrealizedPct = costBasis > 0 ? (totalUnrealized / costBasis) * 100 : 0
+  const missingPriceCount = assetRows.filter(r => r.qty > 0 && !r.hasPrice).length
 
-  return { totalValue, totalUnrealized, totalRealized, totalInvested, totalGrossInvested, unrealizedPct, byCategory }
+  return { totalValue, totalUnrealized, totalRealized, totalInvested, totalGrossInvested, unrealizedPct, byCategory, missingPriceCount }
 }

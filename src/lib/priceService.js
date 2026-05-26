@@ -110,6 +110,11 @@ async function readFromDbCache(coingeckoIds) {
   return map
 }
 
+export async function warmFromDb(coingeckoIds) {
+  if (!coingeckoIds.length) return {}
+  return readFromDbCache(coingeckoIds)
+}
+
 export function resetPriceCache() {
   lastFetchedAt = null
 }
