@@ -313,13 +313,13 @@ export function NLTransactionModal({ portfolioId, onParsedSingle, onBulkSave, on
       if (missing.length) {
         setSaveStatus({ label: `Creating ${missing.length} new asset${missing.length > 1 ? 's' : ''}…`, pct: 30 })
         for (const sym of missing) {
-          const txWithName = selectedTxs.find(tx => (tx.symbol ?? '').toUpperCase() === sym && tx.name)
-          if (!txWithName?.name) continue
+          const txForSym = selectedTxs.find(tx => (tx.symbol ?? '').toUpperCase() === sym)
+          const name = txForSym?.name || sym
           const { data: created } = await supabase
             .from('assets')
             .upsert(
-              { symbol: sym, name: txWithName.name, category: 'spot', coingecko_id: sym.toLowerCase() },
-              { onConflict: 'coingecko_id' }
+              { symbol: sym, name, category: 'spot', coingecko_id: sym.toLowerCase() },
+              { onConflict: 'symbol' }
             )
             .select('id').single()
           if (created?.id) assetMap.set(sym, created.id)
