@@ -326,9 +326,10 @@ function DonutChart({ items }) {
   )
 }
 
-function MonthlyBarChart({ data, selectedCell, onSelect }) {
-  const totals = data.map(m => CHART_CATS.reduce((s, c) => s + Math.max(0, m[c.key] ?? 0), 0))
-  const maxVal = Math.max(...totals, 1)
+function MonthlyBarChart({ data, selectedCell, filteredCat, onSelect }) {
+  const visCats = filteredCat ? CHART_CATS.filter(c => c.key === filteredCat) : CHART_CATS
+  const totals  = data.map(m => visCats.reduce((s, c) => s + Math.max(0, m[c.key] ?? 0), 0))
+  const maxVal  = Math.max(...totals, 1)
   if (!totals.some(t => t > 0)) return (
     <div className="h-40 flex items-center justify-center text-gray-600 text-xs">No income data for this period.</div>
   )
@@ -352,7 +353,7 @@ function MonthlyBarChart({ data, selectedCell, onSelect }) {
         const isMonthSelected = selectedCell?.monthKey === m.key
         return (
           <g key={m.key}>
-            {CHART_CATS.map(cat => {
+            {visCats.map(cat => {
               const val = Math.max(0, m[cat.key] ?? 0)
               if (!val) return null
               const h = (val / maxVal) * cH
@@ -444,6 +445,7 @@ export function Analytics({ transactions, assets, prices, changes, marketData = 
   const [incomeRange,  setIncomeRange]  = useState('ALL')
   const [monthlyRange, setMonthlyRange] = useState('1Y')
   const [selectedCell, setSelectedCell] = useState(null)
+  const [filteredCat,  setFilteredCat]  = useState(null)
 
   // Per-asset enriched rows
   const assetRows = useMemo(() => {
@@ -653,17 +655,31 @@ export function Analytics({ transactions, assets, prices, changes, marketData = 
                   >{r.id}</button>
                 ))}
               </div>
-              {CHART_CATS.map(c => (
-                <div key={c.key} className="flex items-center gap-1.5">
-                  <span className="w-2 h-2 rounded-sm" style={{ background: c.color }} />
-                  <span className="text-xs text-gray-500">{c.label}</span>
-                </div>
-              ))}
+              {CHART_CATS.map(c => {
+                const active = filteredCat === c.key
+                const dimmed = filteredCat && !active
+                return (
+                  <button
+                    key={c.key}
+                    onClick={() => { setFilteredCat(f => f === c.key ? null : c.key); setSelectedCell(null) }}
+                    className={`flex items-center gap-1.5 px-1.5 py-0.5 rounded transition-colors ${
+                      active  ? 'bg-surface-3 ring-1 ring-white/20' :
+                      dimmed  ? 'opacity-30 hover:opacity-60' :
+                      'hover:bg-surface-3'
+                    }`}
+                    title={active ? 'Click to show all' : `Filter to ${c.label} only`}
+                  >
+                    <span className="w-2 h-2 rounded-sm flex-shrink-0" style={{ background: c.color }} />
+                    <span className="text-xs text-gray-500">{c.label}</span>
+                  </button>
+                )
+              })}
             </div>
           </div>
           <MonthlyBarChart
             data={monthly}
             selectedCell={selectedCell}
+            filteredCat={filteredCat}
             onSelect={cell => setSelectedCell(prev =>
               prev?.monthKey === cell.monthKey && prev?.catKey === cell.catKey ? null : cell
             )}
