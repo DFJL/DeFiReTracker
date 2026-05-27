@@ -60,7 +60,7 @@ function ColHeader({ label, col, sort, onSort, className = '' }) {
   )
 }
 
-export function HoldingsTable({ transactions, assets, prices, changes, marketData = {}, pmktPositions = [], onUpdateAsset, onAutoFix, onAudit }) {
+export function HoldingsTable({ transactions, assets, prices, changes, marketData = {}, pmktPositions = [], onUpdateAsset, onAutoFix, onAudit, portfolioId, onBulkInsert }) {
   const [sort, setSort]               = useState({ col: 'value', dir: 'desc' })
   const [search, setSearch]           = useState('')
   const [catFilter, setCatFilter]     = useState('')
@@ -71,6 +71,8 @@ export function HoldingsTable({ transactions, assets, prices, changes, marketDat
   const [editSaving, setEditSaving]   = useState(false)
   const [autoFixing, setAutoFixing]   = useState(false)
   const [selectedAsset, setSelectedAsset] = useState(null)
+  const [dustModal, setDustModal]     = useState(false)
+  const [dustLiquidating, setDustLiquidating] = useState(false)
 
   function handleSort(col) {
     setSort(s => s.col === col ? { col, dir: s.dir === 'asc' ? 'desc' : 'asc' } : { col, dir: 'desc' })
@@ -160,8 +162,28 @@ export function HoldingsTable({ transactions, assets, prices, changes, marketDat
   }, [pmktPositions])
 
   const unlinkedAssets = allRows.filter(r => r.currentPrice == null && r.qty > 0)
-  const dustCount = allRows.filter(r => (r.currentValue ?? 0) < DUST_THRESHOLD).length
+  const dustRows = allRows.filter(r => r.qty > 0 && (r.currentValue ?? 0) < DUST_THRESHOLD)
+  const dustCount = dustRows.length
   const hasAny = allRows.length > 0 || pmktRows.length > 0
+
+  async function handleLiquidateDust() {
+    if (!onBulkInsert || !portfolioId || !dustRows.length) return
+    const today = new Date().toISOString().slice(0, 10)
+    const txs = dustRows.map(r => ({
+      portfolio_id: portfolioId,
+      asset_id:     r.id,
+      type:         'sell',
+      qty:          r.qty,
+      price_usd:    r.currentPrice ?? 0,
+      fee_usd:      0,
+      date:         today,
+      notes:        'Dust cleanup',
+    }))
+    setDustLiquidating(true)
+    await onBulkInsert(txs)
+    setDustLiquidating(false)
+    setDustModal(false)
+  }
 
   // Asset drilldown view
   if (selectedAsset) {
@@ -238,6 +260,15 @@ export function HoldingsTable({ transactions, assets, prices, changes, marketDat
             <span>Hide dust</span>
             {dustCount > 0 && <span className="opacity-60">({dustCount})</span>}
           </button>
+          {dustCount > 0 && onBulkInsert && (
+            <button
+              onClick={() => setDustModal(true)}
+              className="flex items-center gap-1.5 px-2.5 py-1.5 text-xs rounded border border-red-900 text-red-500 hover:bg-red-900/20 transition-colors"
+              title={`Auto-sell all ${dustCount} dust positions`}
+            >
+              Liquidate dust
+            </button>
+          )}
           {(search || catFilter) && (
             <button onClick={() => { setSearch(''); setCatFilter('') }} className="text-xs text-gray-600 hover:text-gray-400 transition-colors">
               Clear
@@ -483,6 +514,47 @@ export function HoldingsTable({ transactions, assets, prices, changes, marketDat
               ))}
             </tbody>
           </table>
+        </div>
+      )}
+
+      {/* Dust liquidation confirmation modal */}
+      {dustModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
+          <div className="bg-surface-1 border border-border rounded-lg w-full max-w-md shadow-2xl">
+            <div className="px-5 py-4 border-b border-border">
+              <h3 className="text-sm font-semibold text-gray-100">Liquidate dust positions</h3>
+              <p className="text-xs text-gray-500 mt-1">
+                Generates a <span className="text-gray-300">sell</span> transaction for each position under ${DUST_THRESHOLD} at the current market price.
+              </p>
+            </div>
+            <div className="px-5 py-3 max-h-64 overflow-y-auto space-y-1">
+              {dustRows.map(r => (
+                <div key={r.id} className="flex items-center justify-between text-xs py-1.5 border-b border-border/40">
+                  <div className="flex items-center gap-2">
+                    <span className="font-semibold text-gray-200 w-16">{r.symbol}</span>
+                    <span className="text-gray-500 num">{fmtQty(r.qty)}</span>
+                  </div>
+                  <div className="text-right">
+                    <span className="text-gray-400 num">{r.currentPrice != null ? fmtUsd(r.currentPrice) : '—'}</span>
+                    <span className="text-gray-600 ml-2 num">= {fmtUsd(r.currentValue ?? 0)}</span>
+                  </div>
+                </div>
+              ))}
+            </div>
+            <div className="px-5 py-4 flex justify-end gap-2">
+              <button
+                onClick={() => setDustModal(false)}
+                className="px-3 py-1.5 text-xs text-gray-400 hover:text-gray-200 transition-colors"
+              >Cancel</button>
+              <button
+                onClick={handleLiquidateDust}
+                disabled={dustLiquidating}
+                className="px-4 py-1.5 text-xs bg-red-700 hover:bg-red-600 text-white rounded transition-colors disabled:opacity-50"
+              >
+                {dustLiquidating ? 'Liquidating…' : `Sell ${dustRows.length} positions`}
+              </button>
+            </div>
+          </div>
         </div>
       )}
     </div>

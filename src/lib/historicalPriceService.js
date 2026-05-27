@@ -4,7 +4,9 @@ export async function fetchHistoricalPrices(coingeckoId, fromDate) {
   if (cache[coingeckoId]) return cache[coingeckoId]
 
   const daysSince = Math.ceil((Date.now() - new Date(fromDate).getTime()) / 86_400_000) + 2
-  const days = Math.max(daysSince, 30)
+  // CoinGecko free tier reliably returns daily data up to ~365 days;
+  // beyond that responses become sparse or empty.
+  const days = Math.min(Math.max(daysSince, 30), 365)
 
   try {
     const res = await fetch(

@@ -259,6 +259,8 @@ export default function App() {
               onUpdateAsset={updateAsset}
               onAutoFix={autoFixAssets}
               onAudit={() => setAuditOpen(true)}
+              portfolioId={portfolioId}
+              onBulkInsert={bulkInsert}
             />
           )}
 
