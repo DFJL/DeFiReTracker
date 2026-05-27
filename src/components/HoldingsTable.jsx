@@ -60,7 +60,7 @@ function ColHeader({ label, col, sort, onSort, className = '' }) {
   )
 }
 
-export function HoldingsTable({ transactions, assets, prices, changes, marketData = {}, pmktPositions = [], onUpdateAsset, onAutoFix, onAudit, portfolioId, onBulkInsert, loadingPrices = false }) {
+export function HoldingsTable({ transactions, assets, prices, changes, marketData = {}, pmktPositions = [], onUpdateAsset, onAutoFix, onAudit, portfolioId, onBulkInsert, loadingPrices = false, historicalPrices = {} }) {
   const [sort, setSort]               = useState({ col: 'value', dir: 'desc' })
   const [search, setSearch]           = useState('')
   const [catFilter, setCatFilter]     = useState('')
@@ -160,6 +160,16 @@ export function HoldingsTable({ transactions, assets, prices, changes, marketDat
       return { _key: i, title, outcome, size, avgPrice, currentPrice, currentValue: value, invested, pnl, pct }
     })
   }, [pmktPositions])
+
+  // Derive sparklines from the last 7 historical price points per asset
+  const sparklines = useMemo(() => {
+    const result = {}
+    for (const row of allRows) {
+      const prices = historicalPrices[row.id]
+      if (prices?.length > 1) result[row.id] = prices.slice(-7).map(p => p.price)
+    }
+    return result
+  }, [historicalPrices, allRows])
 
   const unlinkedAssets = allRows.filter(r => r.currentPrice == null && r.qty > 0)
   // Only include positions that have a live price — otherwise currentValue=0 and every
@@ -340,7 +350,7 @@ export function HoldingsTable({ transactions, assets, prices, changes, marketDat
                 </tr>
               ) : rows.map(row => {
                 const changeVal = getChange(row.coingecko_id)
-                const sparkline = marketData[row.coingecko_id]?.sparkline
+                const sparkline = sparklines[row.id] ?? marketData[row.coingecko_id]?.sparkline
                 return (
                   <>
                   <tr

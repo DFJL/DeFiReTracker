@@ -3,6 +3,7 @@ import { usePortfolios } from './hooks/usePortfolios'
 import { useTransactions } from './hooks/useTransactions'
 import { usePrices } from './hooks/usePrices'
 import { usePolymarket } from './hooks/usePolymarket'
+import { usePortfolioHistory } from './hooks/usePortfolioHistory'
 import { PortfolioSwitcher } from './components/PortfolioSwitcher'
 import { Dashboard } from './components/Dashboard'
 import { HoldingsTable } from './components/HoldingsTable'
@@ -99,6 +100,9 @@ export default function App() {
 
   // Polymarket — lifted to app level so positions flow into Holdings & Txs
   const pmkt = usePolymarket(portfolioId)
+
+  // Portfolio history — lifted so Dashboard and HoldingsTable share one fetch + cache
+  const { timeline, loading: loadingHistory, assetChanges, historicalPrices } = usePortfolioHistory(transactions, assets)
 
   async function handlePortfolioDelete(id) {
     await deletePortfolio(id)
@@ -245,6 +249,9 @@ export default function App() {
               prices={prices}
               changes={changes}
               pmktSummary={pmkt.summary}
+              timeline={timeline}
+              loadingHistory={loadingHistory}
+              assetChanges={assetChanges}
             />
           )}
 
@@ -262,6 +269,7 @@ export default function App() {
               portfolioId={portfolioId}
               onBulkInsert={bulkInsert}
               loadingPrices={loadingPrices}
+              historicalPrices={historicalPrices}
             />
           )}
 

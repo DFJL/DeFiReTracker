@@ -1,12 +1,11 @@
 import { useState, useEffect, useMemo } from 'react'
-import { fetchHistoricalPrices } from '../lib/historicalPriceService'
+import { fetchHistoricalPricesBatch } from '../lib/historicalPriceService'
 
 export function usePortfolioHistory(transactions, assets) {
   const [historicalPrices, setHistoricalPrices] = useState({})
   const [loading, setLoading] = useState(false)
 
   const fromDate = useMemo(() => {
-    // Start from the earliest of any transaction (deposits included — they anchor the chart)
     if (!transactions.length) return new Date().toISOString().slice(0, 10)
     const earliest = Math.min(...transactions.map(t => new Date(t.date).getTime()))
     return new Date(earliest).toISOString().slice(0, 10)
@@ -18,14 +17,13 @@ export function usePortfolioHistory(transactions, assets) {
     if (!assets.length || !transactions.length) return
     setLoading(true)
 
-    Promise.all(
-      assets.map(asset =>
-        fetchHistoricalPrices(asset.coingecko_id, fromDate).then(prices => [asset.id, prices])
-      )
-    )
-      .then(results => {
+    // Single batched request for all coins — DeFiLlama returns all data from fromDate to today
+    fetchHistoricalPricesBatch(assets.map(a => a.coingecko_id), fromDate)
+      .then(byCoingeckoId => {
         const map = {}
-        for (const [id, prices] of results) map[id] = prices
+        for (const asset of assets) {
+          map[asset.id] = byCoingeckoId[asset.coingecko_id] ?? []
+        }
         setHistoricalPrices(map)
       })
       .finally(() => setLoading(false))
@@ -45,7 +43,6 @@ export function usePortfolioHistory(transactions, assets) {
 
     const sortedTxs = [...transactions].sort((a, b) => new Date(a.date) - new Date(b.date))
 
-    // Pre-compute cumulative net deposits per date for O(n) instead of O(n²)
     const cashTxs = sortedTxs.filter(t => t.asset_id == null)
     let cumDeposited = 0
     let cumWithdrawn = 0
@@ -100,10 +97,6 @@ export function usePortfolioHistory(transactions, assets) {
       }
     })
 
-    // Trim leading entries where portfolio value is negligible (<$100).
-    // Net deposits may already be non-zero (historical deposits), but if the
-    // portfolio value is still $0 the chart just shows a flat bottom line —
-    // the deposits line will clip above the value-scaled Y-axis anyway.
     const firstMeaningful = computed.findIndex(p => p.value >= 100)
     return firstMeaningful > 0 ? computed.slice(firstMeaningful) : computed
   }, [historicalPrices, transactions, assets, fromDate])
@@ -127,5 +120,6 @@ export function usePortfolioHistory(transactions, assets) {
     return result
   }, [historicalPrices, assets])
 
-  return { timeline, loading, assetChanges }
+  // Expose raw historical prices so callers can derive sparklines
+  return { timeline, loading, assetChanges, historicalPrices }
 }
