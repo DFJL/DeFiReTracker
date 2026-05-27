@@ -47,7 +47,7 @@ export function usePortfolioHistory(transactions, assets) {
 
     const sortedTxs = [...transactions].sort((a, b) => new Date(a.date) - new Date(b.date))
 
-    return dates.map(date => {
+    const computed = dates.map(date => {
       let totalValue = 0
       let totalCost = 0
 
@@ -89,6 +89,12 @@ export function usePortfolioHistory(transactions, assets) {
         cost: Math.round(totalCost * 100) / 100,
       }
     })
+
+    // Strip the leading section where the portfolio had negligible value (<$100).
+    // Early positions (LUNA airdrop, tiny FTM) are real but invisible on a chart
+    // scaled to the portfolio's eventual size, causing a misleading long flat line.
+    const firstMeaningful = computed.findIndex(p => p.value >= 100)
+    return firstMeaningful > 0 ? computed.slice(firstMeaningful) : computed
   }, [historicalPrices, transactions, assets, fromDate])
 
   const assetChanges = useMemo(() => {
