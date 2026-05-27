@@ -1,7 +1,6 @@
 import { useMemo, useState } from 'react'
 import { fmtUsd, fmtPct, pnlClass } from '../utils/format'
 import { computeAssetPnl, aggregatePortfolio } from '../utils/pnl'
-import { usePortfolioHistory } from '../hooks/usePortfolioHistory'
 import { PortfolioChart } from './PortfolioChart'
 import { AllocationChart } from './AllocationChart'
 import { AIAnalyzer } from './AIAnalyzer'
@@ -16,8 +15,7 @@ function StatBox({ label, value, sub, valueClass = '' }) {
   )
 }
 
-export function Dashboard({ transactions, assets, prices, changes, pmktSummary }) {
-  const { timeline, loading: loadingHistory, assetChanges } = usePortfolioHistory(transactions, assets)
+export function Dashboard({ transactions, assets, prices, changes, pmktSummary, timeline, loadingHistory, assetChanges }) {
   const [topPerfPeriod, setTopPerfPeriod] = useState('1D')
 
   const assetRows = useMemo(() => {
