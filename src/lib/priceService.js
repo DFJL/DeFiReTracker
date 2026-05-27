@@ -30,15 +30,20 @@ export async function fetchPrices(coingeckoIds) {
   inFlightPromise = (async () => {
     try {
       const coinKeys = coingeckoIds.map(id => `coingecko:${id}`).join(',')
-      const nowSec   = Math.floor(Date.now() / 1000)
+      const s = Math.floor(Date.now() / 1000)
 
-      // All five fetches in parallel — no rate-limit concern with DeFiLlama
-      const [curRes, h1hRes, h24hRes, h7dRes, h30dRes] = await Promise.all([
+      // 10 parallel fetches: current price + % changes + 6 daily snapshots for sparklines
+      const [curRes, h1hRes, h1dRes, h2dRes, h3dRes, h4dRes, h5dRes, h6dRes, h7dRes, h30dRes] = await Promise.all([
         fetch(`${LLAMA_BASE}/prices/current/${coinKeys}`),
-        fetch(`${LLAMA_BASE}/prices/historical/${nowSec - 3_600}/${coinKeys}`),
-        fetch(`${LLAMA_BASE}/prices/historical/${nowSec - 86_400}/${coinKeys}`),
-        fetch(`${LLAMA_BASE}/prices/historical/${nowSec - 7 * 86_400}/${coinKeys}`),
-        fetch(`${LLAMA_BASE}/prices/historical/${nowSec - 30 * 86_400}/${coinKeys}`),
+        fetch(`${LLAMA_BASE}/prices/historical/${s - 3_600}/${coinKeys}`),
+        fetch(`${LLAMA_BASE}/prices/historical/${s - 1 * 86_400}/${coinKeys}`),
+        fetch(`${LLAMA_BASE}/prices/historical/${s - 2 * 86_400}/${coinKeys}`),
+        fetch(`${LLAMA_BASE}/prices/historical/${s - 3 * 86_400}/${coinKeys}`),
+        fetch(`${LLAMA_BASE}/prices/historical/${s - 4 * 86_400}/${coinKeys}`),
+        fetch(`${LLAMA_BASE}/prices/historical/${s - 5 * 86_400}/${coinKeys}`),
+        fetch(`${LLAMA_BASE}/prices/historical/${s - 6 * 86_400}/${coinKeys}`),
+        fetch(`${LLAMA_BASE}/prices/historical/${s - 7 * 86_400}/${coinKeys}`),
+        fetch(`${LLAMA_BASE}/prices/historical/${s - 30 * 86_400}/${coinKeys}`),
       ])
 
       if (!curRes.ok) {
@@ -46,10 +51,15 @@ export async function fetchPrices(coingeckoIds) {
         throw new Error(`DeFiLlama ${curRes.status}`)
       }
 
-      const [curData, h1h, h24h, h7d, h30d] = await Promise.all([
+      const [curData, h1h, h1d, h2d, h3d, h4d, h5d, h6d, h7d, h30d] = await Promise.all([
         curRes.json(),
         h1hRes.ok  ? h1hRes.json()  : null,
-        h24hRes.ok ? h24hRes.json() : null,
+        h1dRes.ok  ? h1dRes.json()  : null,
+        h2dRes.ok  ? h2dRes.json()  : null,
+        h3dRes.ok  ? h3dRes.json()  : null,
+        h4dRes.ok  ? h4dRes.json()  : null,
+        h5dRes.ok  ? h5dRes.json()  : null,
+        h6dRes.ok  ? h6dRes.json()  : null,
         h7dRes.ok  ? h7dRes.json()  : null,
         h30dRes.ok ? h30dRes.json() : null,
       ])
@@ -58,35 +68,40 @@ export async function fetchPrices(coingeckoIds) {
       const changes    = {}
       const marketData = {}
       const pct = (cur, old) => (cur != null && old != null && old > 0) ? ((cur - old) / old) * 100 : null
+      const get = (snap, key) => snap?.coins?.[key]?.price ?? null
 
       for (const id of coingeckoIds) {
-        const key     = `coingecko:${id}`
-        const current = curData?.coins?.[key]
-        if (!current) continue
+        const key = `coingecko:${id}`
+        const cur = curData?.coins?.[key]?.price
+        if (cur == null) continue
 
-        const cur  = current.price
         prices[id] = cur
 
-        const c1h  = pct(cur, h1h?.coins?.[key]?.price)
-        const c24h = pct(cur, h24h?.coins?.[key]?.price)
-        const c7d  = pct(cur, h7d?.coins?.[key]?.price)
-        const c30d = pct(cur, h30d?.coins?.[key]?.price)
+        const p1h  = get(h1h,  key)
+        const p1d  = get(h1d,  key)
+        const p7d  = get(h7d,  key)
+        const p30d = get(h30d, key)
 
-        changes[id]    = c24h
+        changes[id] = pct(cur, p1d)
+
+        // 7-point daily sparkline: 6d ago → today
+        const sparkline = [
+          get(h6d, key), get(h5d, key), get(h4d, key),
+          get(h3d, key), get(h2d, key), p1d, cur,
+        ].filter(v => v != null)
+
         marketData[id] = {
-          change1h:  c1h,
-          change24h: c24h,
-          change7d:  c7d,
-          change30d: c30d,
-          sparkline: [],
+          change1h:  pct(cur, p1h),
+          change24h: pct(cur, p1d),
+          change7d:  pct(cur, p7d),
+          change30d: pct(cur, p30d),
+          sparkline,
         }
       }
 
-      // Persist to DB cache so warmFromDb works on next load
+      // Persist to DB cache
       const upserts = Object.entries(prices).map(([coingecko_id, price_usd]) => ({
-        coingecko_id,
-        symbol: coingecko_id,
-        price_usd,
+        coingecko_id, symbol: coingecko_id, price_usd,
         updated_at: new Date().toISOString(),
       }))
       if (upserts.length) {
