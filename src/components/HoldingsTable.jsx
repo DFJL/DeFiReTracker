@@ -60,7 +60,7 @@ function ColHeader({ label, col, sort, onSort, className = '' }) {
   )
 }
 
-export function HoldingsTable({ transactions, assets, prices, changes, marketData = {}, pmktPositions = [], onUpdateAsset, onAutoFix, onAudit, portfolioId, onBulkInsert }) {
+export function HoldingsTable({ transactions, assets, prices, changes, marketData = {}, pmktPositions = [], onUpdateAsset, onAutoFix, onAudit, portfolioId, onBulkInsert, loadingPrices = false }) {
   const [sort, setSort]               = useState({ col: 'value', dir: 'desc' })
   const [search, setSearch]           = useState('')
   const [catFilter, setCatFilter]     = useState('')
@@ -162,7 +162,9 @@ export function HoldingsTable({ transactions, assets, prices, changes, marketDat
   }, [pmktPositions])
 
   const unlinkedAssets = allRows.filter(r => r.currentPrice == null && r.qty > 0)
-  const dustRows = allRows.filter(r => r.qty > 0 && (r.currentValue ?? 0) < DUST_THRESHOLD)
+  // Only include positions that have a live price — otherwise currentValue=0 and every
+  // unpriced holding (including large ones) would be misidentified as dust.
+  const dustRows = allRows.filter(r => r.qty > 0 && r.currentPrice != null && (r.currentValue ?? 0) < DUST_THRESHOLD)
   const dustCount = dustRows.length
   const hasAny = allRows.length > 0 || pmktRows.length > 0
 
@@ -263,8 +265,9 @@ export function HoldingsTable({ transactions, assets, prices, changes, marketDat
           {dustCount > 0 && onBulkInsert && (
             <button
               onClick={() => setDustModal(true)}
-              className="flex items-center gap-1.5 px-2.5 py-1.5 text-xs rounded border border-red-900 text-red-500 hover:bg-red-900/20 transition-colors"
-              title={`Auto-sell all ${dustCount} dust positions`}
+              disabled={loadingPrices}
+              className="flex items-center gap-1.5 px-2.5 py-1.5 text-xs rounded border border-red-900 text-red-500 hover:bg-red-900/20 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+              title={loadingPrices ? 'Wait for prices to load before liquidating' : `Auto-sell all ${dustCount} dust positions`}
             >
               Liquidate dust
             </button>
