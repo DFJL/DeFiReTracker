@@ -15,17 +15,17 @@ const RANGES = [
 function CustomTooltip({ active, payload, label }) {
   if (!active || !payload?.length) return null
   const value = payload.find(p => p.dataKey === 'value')
-  const cost  = payload.find(p => p.dataKey === 'cost')
-  const pnl   = value && cost ? value.value - cost.value : null
+  const dep   = payload.find(p => p.dataKey === 'netDeposited')
+  const pnl   = value && dep ? value.value - dep.value : null
   const isUp  = pnl >= 0
   return (
     <div className="bg-surface-2 border border-border rounded px-3 py-2 text-xs shadow-xl space-y-1">
       <p className="text-gray-400">{label}</p>
       {value && <p className="text-gray-100 font-semibold num">Value  {fmtUsd(value.value)}</p>}
-      {cost  && <p className="text-gray-500 num">Invested  {fmtUsd(cost.value)}</p>}
+      {dep   && <p className="text-gray-500 num">Net deposited  {fmtUsd(dep.value)}</p>}
       {pnl != null && (
-        <p className={`num font-semibold ${isUp ? 'profit' : 'loss'}`}>
-          PnL  {isUp ? '+' : ''}{fmtUsd(pnl)}
+        <p className={`num font-semibold ${isUp ? 'text-profit' : 'text-loss'}`}>
+          PnL vs deposits  {isUp ? '+' : ''}{fmtUsd(pnl)}
         </p>
       )}
     </div>
@@ -53,13 +53,13 @@ export function PortfolioChart({ timeline, loading }) {
 
   const yMin = useMemo(() => {
     if (!filtered.length) return 0
-    const vals = filtered.flatMap(d => [d.value, d.cost])
-    return Math.floor(Math.min(...vals) * 0.95)
+    const vals = filtered.flatMap(d => [d.value, d.netDeposited])
+    return Math.floor(Math.min(0, ...vals) * 1.05)
   }, [filtered])
 
   const yMax = useMemo(() => {
     if (!filtered.length) return 0
-    const vals = filtered.flatMap(d => [d.value, d.cost])
+    const vals = filtered.flatMap(d => [d.value, d.netDeposited])
     return Math.ceil(Math.max(...vals) * 1.05)
   }, [filtered])
 
@@ -75,7 +75,7 @@ export function PortfolioChart({ timeline, loading }) {
             </span>
             <span className="flex items-center gap-1">
               <span className="inline-block w-6 border-t border-dashed border-gray-500" />
-              <span className="text-gray-500">Invested</span>
+              <span className="text-gray-500">Net deposited</span>
             </span>
           </div>
         </div>
@@ -136,10 +136,10 @@ export function PortfolioChart({ timeline, loading }) {
               <Tooltip content={<CustomTooltip />} />
               <ReferenceLine y={firstValue} stroke="#374151" strokeDasharray="3 3" />
 
-              {/* Cost basis / invested line */}
+              {/* Cumulative net deposits line */}
               <Area
                 type="monotone"
-                dataKey="cost"
+                dataKey="netDeposited"
                 stroke="#6b7280"
                 strokeWidth={1.5}
                 strokeDasharray="5 4"
