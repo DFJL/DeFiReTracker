@@ -6,9 +6,9 @@ export function usePortfolioHistory(transactions, assets) {
   const [loading, setLoading] = useState(false)
 
   const fromDate = useMemo(() => {
-    const assetTxs = transactions.filter(t => t.asset_id != null)
-    if (!assetTxs.length) return new Date().toISOString().slice(0, 10)
-    const earliest = Math.min(...assetTxs.map(t => new Date(t.date).getTime()))
+    // Start from the earliest of any transaction (deposits included — they anchor the chart)
+    if (!transactions.length) return new Date().toISOString().slice(0, 10)
+    const earliest = Math.min(...transactions.map(t => new Date(t.date).getTime()))
     return new Date(earliest).toISOString().slice(0, 10)
   }, [transactions])
 
@@ -47,16 +47,31 @@ export function usePortfolioHistory(transactions, assets) {
 
     const sortedTxs = [...transactions].sort((a, b) => new Date(a.date) - new Date(b.date))
 
+    // Pre-compute cumulative net deposits per date for O(n) instead of O(n²)
+    const cashTxs = sortedTxs.filter(t => t.asset_id == null)
+    let cumDeposited = 0
+    let cumWithdrawn = 0
+    let cashIdx = 0
+    const netDepositByDate = {}
+
+    for (const date of dates) {
+      while (cashIdx < cashTxs.length && cashTxs[cashIdx].date.slice(0, 10) <= date) {
+        const tx = cashTxs[cashIdx]
+        if (tx.type === 'deposit')    cumDeposited += Number(tx.qty)
+        if (tx.type === 'withdrawal') cumWithdrawn += Number(tx.qty)
+        cashIdx++
+      }
+      netDepositByDate[date] = cumDeposited - cumWithdrawn
+    }
+
     const computed = dates.map(date => {
       let totalValue = 0
-      let totalCost = 0
 
       for (const asset of assets) {
         const assetTxs = sortedTxs.filter(
           t => t.asset_id === asset.id && t.date.slice(0, 10) <= date
         )
 
-        // Weighted avg cost basis replay
         let runningQty = 0
         let runningCost = 0
         for (const tx of assetTxs) {
@@ -74,9 +89,6 @@ export function usePortfolioHistory(transactions, assets) {
         }
 
         runningQty = Math.max(0, runningQty)
-        runningCost = Math.max(0, runningCost)
-        totalCost += runningCost
-
         if (runningQty === 0) continue
         const prices = historicalPrices[asset.id] ?? []
         const entry = [...prices].reverse().find(p => p.date <= date)
@@ -85,15 +97,13 @@ export function usePortfolioHistory(transactions, assets) {
 
       return {
         date,
-        value: Math.round(totalValue * 100) / 100,
-        cost: Math.round(totalCost * 100) / 100,
+        value:        Math.round(totalValue * 100) / 100,
+        netDeposited: Math.round(netDepositByDate[date] * 100) / 100,
       }
     })
 
-    // Strip the leading section where the portfolio had negligible value (<$100).
-    // Early positions (LUNA airdrop, tiny FTM) are real but invisible on a chart
-    // scaled to the portfolio's eventual size, causing a misleading long flat line.
-    const firstMeaningful = computed.findIndex(p => p.value >= 100)
+    // Trim leading entries where both lines are zero (before any activity)
+    const firstMeaningful = computed.findIndex(p => p.value > 0 || p.netDeposited > 0)
     return firstMeaningful > 0 ? computed.slice(firstMeaningful) : computed
   }, [historicalPrices, transactions, assets, fromDate])
 
