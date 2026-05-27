@@ -60,7 +60,7 @@ function ColHeader({ label, col, sort, onSort, className = '' }) {
   )
 }
 
-export function HoldingsTable({ transactions, assets, prices, changes, marketData = {}, pmktPositions = [], onUpdateAsset, onAutoFix, onAudit, portfolioId, onBulkInsert, loadingPrices = false, historicalPrices = {} }) {
+export function HoldingsTable({ transactions, assets, prices, changes, marketData = {}, pmktPositions = [], onUpdateAsset, onAutoFix, onAudit, portfolioId, onBulkInsert, loadingPrices = false, historicalPrices = {}, assetChanges = {} }) {
   const [sort, setSort]               = useState({ col: 'value', dir: 'desc' })
   const [search, setSearch]           = useState('')
   const [catFilter, setCatFilter]     = useState('')
@@ -105,9 +105,14 @@ export function HoldingsTable({ transactions, assets, prices, changes, marketDat
 
   function getChange(cgId) {
     const md = marketData[cgId]
-    if (!md) return changes[cgId] ?? null
+    const hist = assetChanges[cgId]
     const key = { '1H': 'change1h', '24H': 'change24h', '7D': 'change7d', '30D': 'change30d' }[changePeriod]
-    return md[key] ?? null
+    // Prefer DeFiLlama market data; fall back to historical-computed changes for 7D/30D
+    const fromMarket = md?.[key] ?? changes[cgId] ?? null
+    if (fromMarket != null) return fromMarket
+    if (changePeriod === '7D')  return hist?.change7d  ?? null
+    if (changePeriod === '30D') return hist?.change30d ?? null
+    return null
   }
 
   const allRows = useMemo(() => {
