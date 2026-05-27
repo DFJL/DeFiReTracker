@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react'
+import { useState, useMemo, useEffect } from 'react'
 import { Modal } from './ui/Modal'
 import { TransactionForm } from './TransactionForm'
 import { NLTransactionModal } from './NLTransactionModal'
@@ -9,6 +9,7 @@ const TYPE_COLOR = {
   sell: 'text-loss',  transfer_out: 'text-loss', withdrawal: 'text-loss',
 }
 const TX_TYPES = ['buy', 'sell', 'transfer_in', 'transfer_out', 'earn', 'deposit', 'withdrawal']
+const PAGE_SIZES = [25, 50, 100, 250]
 
 function SortIcon({ active, dir }) {
   if (!active) return <span className="text-gray-700 ml-0.5">⇅</span>
@@ -39,9 +40,17 @@ export function TransactionManager({ portfolioId, transactions, onUpsert, onDele
   const [search, setSearch]       = useState('')
   const [typeFilter, setTypeFilter] = useState('')
 
+  // Pagination state
+  const [page, setPage]           = useState(1)
+  const [pageSize, setPageSize]   = useState(50)
+
   function handleSort(col) {
     setSort(s => s.col === col ? { col, dir: s.dir === 'asc' ? 'desc' : 'asc' } : { col, dir: 'desc' })
+    setPage(1)
   }
+
+  // Reset page when filters change
+  useEffect(() => { setPage(1) }, [search, typeFilter])
 
   const filtered = useMemo(() => {
     let rows = transactions
@@ -64,13 +73,21 @@ export function TransactionManager({ portfolioId, transactions, onUpsert, onDele
     })
   }, [transactions, search, typeFilter, sort])
 
+  const totalPages = Math.max(1, Math.ceil(filtered.length / pageSize))
+  const safePage   = Math.min(page, totalPages)
+  const pageStart  = (safePage - 1) * pageSize
+  const paginated  = filtered.slice(pageStart, pageStart + pageSize)
+
   // Selection helpers
-  const allSelected = filtered.length > 0 && filtered.every(tx => selected.has(tx.id))
+  const allSelected = paginated.length > 0 && paginated.every(tx => selected.has(tx.id))
   const someSelected = selected.size > 0
 
   function toggleAll() {
-    if (allSelected) setSelected(new Set())
-    else setSelected(new Set(filtered.map(tx => tx.id)))
+    if (allSelected) {
+      setSelected(s => { const n = new Set(s); paginated.forEach(tx => n.delete(tx.id)); return n })
+    } else {
+      setSelected(s => { const n = new Set(s); paginated.forEach(tx => n.add(tx.id)); return n })
+    }
   }
 
   function toggleOne(id) {
@@ -169,72 +186,120 @@ export function TransactionManager({ portfolioId, transactions, onUpsert, onDele
           No transactions match the current filter.
         </div>
       ) : (
-        <div className="bg-surface-1 border border-border rounded-lg overflow-x-auto">
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="border-b border-border">
-                {/* Select-all checkbox */}
-                <th className="px-3 py-3 w-8">
-                  <input
-                    type="checkbox"
-                    checked={allSelected}
-                    onChange={toggleAll}
-                    className="accent-accent"
-                  />
-                </th>
-                <ColHeader label="Date"  col="date"  sort={sort} onSort={handleSort} className="px-3 text-left" />
-                <ColHeader label="Asset" col="asset" sort={sort} onSort={handleSort} className="px-3 text-left" />
-                <ColHeader label="Type"  col="type"  sort={sort} onSort={handleSort} className="px-3 text-left hidden sm:table-cell" />
-                <ColHeader label="Qty"   col="qty"   sort={sort} onSort={handleSort} className="px-3 text-right hidden sm:table-cell" />
-                <th className="px-3 py-3 text-right text-xs text-gray-500 uppercase tracking-wider hidden md:table-cell">Price</th>
-                <th className="px-3 py-3 text-right text-xs text-gray-500 uppercase tracking-wider hidden md:table-cell">Fee</th>
-                <ColHeader label="Total" col="total" sort={sort} onSort={handleSort} className="px-3 text-right" />
-                <th className="px-3 py-3 w-16" />
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-border">
-              {filtered.map(tx => (
-                <tr
-                  key={tx.id}
-                  className={`hover:bg-surface-2 transition-colors ${selected.has(tx.id) ? 'bg-surface-2/60' : ''}`}
-                >
-                  <td className="px-3 py-2.5">
+        <>
+          <div className="bg-surface-1 border border-border rounded-lg overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b border-border">
+                  {/* Select-all checkbox */}
+                  <th className="px-3 py-3 w-8">
                     <input
                       type="checkbox"
-                      checked={selected.has(tx.id)}
-                      onChange={() => toggleOne(tx.id)}
+                      checked={allSelected}
+                      onChange={toggleAll}
                       className="accent-accent"
                     />
-                  </td>
-                  <td className="px-3 py-2.5 text-gray-400 num text-xs whitespace-nowrap">{fmtDate(tx.date)}</td>
-                  <td className="px-3 py-2.5">
-                    <div className="font-semibold text-gray-100">{tx.asset?.symbol ?? '—'}</div>
-                    <div className={`text-xs sm:hidden capitalize ${TYPE_COLOR[tx.type] ?? 'text-gray-400'}`}>
-                      {tx.type.replace('_', ' ')}
-                    </div>
-                  </td>
-                  <td className={`px-3 py-2.5 capitalize hidden sm:table-cell ${TYPE_COLOR[tx.type] ?? 'text-gray-400'}`}>
-                    {tx.type.replace('_', ' ')}
-                  </td>
-                  <td className="px-3 py-2.5 text-right num text-gray-200 hidden sm:table-cell">{fmtQty(tx.qty)}</td>
-                  <td className="px-3 py-2.5 text-right num text-gray-400 hidden md:table-cell">{fmtUsd(tx.price_usd)}</td>
-                  <td className="px-3 py-2.5 text-right num text-gray-500 hidden md:table-cell">{tx.fee_usd > 0 ? fmtUsd(tx.fee_usd) : '—'}</td>
-                  <td className="px-3 py-2.5 text-right num text-gray-200">{fmtUsd(tx.qty * tx.price_usd)}</td>
-                  <td className="px-3 py-2.5 text-right whitespace-nowrap">
-                    <button
-                      onClick={() => { setEditing(tx); setNlPrefill(null); setShowForm(true) }}
-                      className="text-xs text-gray-500 hover:text-accent transition-colors mr-2"
-                    >Edit</button>
-                    <button
-                      onClick={() => { if (confirm('Delete?')) onDelete(tx.id) }}
-                      className="text-xs text-gray-500 hover:text-loss transition-colors"
-                    >Del</button>
-                  </td>
+                  </th>
+                  <th className="px-2 py-3 text-xs text-gray-600 w-10 text-right">#</th>
+                  <ColHeader label="Date"  col="date"  sort={sort} onSort={handleSort} className="px-3 text-left" />
+                  <ColHeader label="Asset" col="asset" sort={sort} onSort={handleSort} className="px-3 text-left" />
+                  <ColHeader label="Type"  col="type"  sort={sort} onSort={handleSort} className="px-3 text-left hidden sm:table-cell" />
+                  <ColHeader label="Qty"   col="qty"   sort={sort} onSort={handleSort} className="px-3 text-right hidden sm:table-cell" />
+                  <th className="px-3 py-3 text-right text-xs text-gray-500 uppercase tracking-wider hidden md:table-cell">Price</th>
+                  <th className="px-3 py-3 text-right text-xs text-gray-500 uppercase tracking-wider hidden md:table-cell">Fee</th>
+                  <ColHeader label="Total" col="total" sort={sort} onSort={handleSort} className="px-3 text-right" />
+                  <th className="px-3 py-3 w-16" />
                 </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+              </thead>
+              <tbody className="divide-y divide-border">
+                {paginated.map((tx, idx) => (
+                  <tr
+                    key={tx.id}
+                    className={`hover:bg-surface-2 transition-colors ${selected.has(tx.id) ? 'bg-surface-2/60' : ''}`}
+                  >
+                    <td className="px-3 py-2.5">
+                      <input
+                        type="checkbox"
+                        checked={selected.has(tx.id)}
+                        onChange={() => toggleOne(tx.id)}
+                        className="accent-accent"
+                      />
+                    </td>
+                    <td className="px-2 py-2.5 text-right text-xs text-gray-600 num tabular-nums">
+                      {pageStart + idx + 1}
+                    </td>
+                    <td className="px-3 py-2.5 text-gray-400 num text-xs whitespace-nowrap">{fmtDate(tx.date)}</td>
+                    <td className="px-3 py-2.5">
+                      <div className="font-semibold text-gray-100">{tx.asset?.symbol ?? '—'}</div>
+                      <div className={`text-xs sm:hidden capitalize ${TYPE_COLOR[tx.type] ?? 'text-gray-400'}`}>
+                        {tx.type.replace('_', ' ')}
+                      </div>
+                    </td>
+                    <td className={`px-3 py-2.5 capitalize hidden sm:table-cell ${TYPE_COLOR[tx.type] ?? 'text-gray-400'}`}>
+                      {tx.type.replace('_', ' ')}
+                    </td>
+                    <td className="px-3 py-2.5 text-right num text-gray-200 hidden sm:table-cell">{fmtQty(tx.qty)}</td>
+                    <td className="px-3 py-2.5 text-right num text-gray-400 hidden md:table-cell">{fmtUsd(tx.price_usd)}</td>
+                    <td className="px-3 py-2.5 text-right num text-gray-500 hidden md:table-cell">{tx.fee_usd > 0 ? fmtUsd(tx.fee_usd) : '—'}</td>
+                    <td className="px-3 py-2.5 text-right num text-gray-200">{fmtUsd(tx.qty * tx.price_usd)}</td>
+                    <td className="px-3 py-2.5 text-right whitespace-nowrap">
+                      <button
+                        onClick={() => { setEditing(tx); setNlPrefill(null); setShowForm(true) }}
+                        className="text-xs text-gray-500 hover:text-accent transition-colors mr-2"
+                      >Edit</button>
+                      <button
+                        onClick={() => { if (confirm('Delete?')) onDelete(tx.id) }}
+                        className="text-xs text-gray-500 hover:text-loss transition-colors"
+                      >Del</button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+
+          {/* Pagination controls */}
+          <div className="flex items-center justify-between gap-3 px-1">
+            <div className="flex items-center gap-2">
+              <span className="text-xs text-gray-500">Rows per page:</span>
+              <select
+                value={pageSize}
+                onChange={e => { setPageSize(Number(e.target.value)); setPage(1) }}
+                className="py-1 px-2 text-xs bg-surface-1 border border-border rounded text-gray-400 focus:outline-none focus:border-accent"
+              >
+                {PAGE_SIZES.map(s => <option key={s} value={s}>{s}</option>)}
+              </select>
+              <span className="text-xs text-gray-600">
+                {pageStart + 1}–{Math.min(pageStart + pageSize, filtered.length)} of {filtered.length}
+              </span>
+            </div>
+            <div className="flex items-center gap-1">
+              <button
+                onClick={() => setPage(1)}
+                disabled={safePage === 1}
+                className="px-2 py-1 text-xs text-gray-500 hover:text-gray-200 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+              >«</button>
+              <button
+                onClick={() => setPage(p => Math.max(1, p - 1))}
+                disabled={safePage === 1}
+                className="px-2 py-1 text-xs text-gray-500 hover:text-gray-200 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+              >‹</button>
+              <span className="px-2 text-xs text-gray-400">
+                {safePage} / {totalPages}
+              </span>
+              <button
+                onClick={() => setPage(p => Math.min(totalPages, p + 1))}
+                disabled={safePage === totalPages}
+                className="px-2 py-1 text-xs text-gray-500 hover:text-gray-200 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+              >›</button>
+              <button
+                onClick={() => setPage(totalPages)}
+                disabled={safePage === totalPages}
+                className="px-2 py-1 text-xs text-gray-500 hover:text-gray-200 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+              >»</button>
+            </div>
+          </div>
+        </>
       )}
 
       {showNL && (

@@ -6,8 +6,9 @@ export function usePortfolioHistory(transactions, assets) {
   const [loading, setLoading] = useState(false)
 
   const fromDate = useMemo(() => {
-    if (!transactions.length) return new Date().toISOString().slice(0, 10)
-    const earliest = Math.min(...transactions.map(t => new Date(t.date).getTime()))
+    const assetTxs = transactions.filter(t => t.asset_id != null)
+    if (!assetTxs.length) return new Date().toISOString().slice(0, 10)
+    const earliest = Math.min(...assetTxs.map(t => new Date(t.date).getTime()))
     return new Date(earliest).toISOString().slice(0, 10)
   }, [transactions])
 
