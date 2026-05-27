@@ -1,13 +1,14 @@
 import { supabase } from './supabase'
 
-const COINGECKO_BASE = 'https://api.coingecko.com/api/v3'
-const CACHE_TTL_MS   = 60_000
+const LLAMA_BASE = 'https://coins.llama.fi'
+const CG_BASE    = 'https://api.coingecko.com/api/v3'
+const CACHE_TTL_MS = 60_000
 
-let lastFetchedAt  = null
-let retryAfter     = 0          // absolute ms timestamp — don't fetch before this
-let inFlightPromise = null
-let cachedPrices   = {}         // last known-good prices, survive across TTL windows
-let cachedChanges  = {}
+let lastFetchedAt    = null
+let retryAfter       = 0
+let inFlightPromise  = null
+let cachedPrices     = {}
+let cachedChanges    = {}
 let cachedMarketData = {}
 
 export async function fetchPrices(coingeckoIds) {
@@ -15,7 +16,6 @@ export async function fetchPrices(coingeckoIds) {
 
   const now = Date.now()
 
-  // Within TTL or inside backoff window: serve from memory + fill gaps from DB
   if ((lastFetchedAt && now - lastFetchedAt < CACHE_TTL_MS) || now < retryAfter) {
     const missing = coingeckoIds.filter(id => !(id in cachedPrices))
     if (missing.length) {
@@ -29,63 +29,85 @@ export async function fetchPrices(coingeckoIds) {
 
   inFlightPromise = (async () => {
     try {
-      const ids = coingeckoIds.join(',')
-      const res = await fetch(
-        `${COINGECKO_BASE}/coins/markets?vs_currency=usd&ids=${ids}` +
-        `&sparkline=true&price_change_percentage=1h,7d,30d&per_page=250`
-      )
+      const coinKeys = coingeckoIds.map(id => `coingecko:${id}`).join(',')
+      const nowSec   = Math.floor(Date.now() / 1000)
 
-      // Rate-limit: back off 5 minutes; other errors: back off 2 minutes
-      if (!res.ok) {
-        retryAfter = Date.now() + (res.status === 429 ? 5 * 60_000 : 2 * 60_000)
-        throw new Error(`CoinGecko ${res.status}`)
+      // All five fetches in parallel — no rate-limit concern with DeFiLlama
+      const [curRes, h1hRes, h24hRes, h7dRes, h30dRes] = await Promise.all([
+        fetch(`${LLAMA_BASE}/prices/current/${coinKeys}`),
+        fetch(`${LLAMA_BASE}/prices/historical/${nowSec - 3_600}/${coinKeys}`),
+        fetch(`${LLAMA_BASE}/prices/historical/${nowSec - 86_400}/${coinKeys}`),
+        fetch(`${LLAMA_BASE}/prices/historical/${nowSec - 7 * 86_400}/${coinKeys}`),
+        fetch(`${LLAMA_BASE}/prices/historical/${nowSec - 30 * 86_400}/${coinKeys}`),
+      ])
+
+      if (!curRes.ok) {
+        retryAfter = Date.now() + 2 * 60_000
+        throw new Error(`DeFiLlama ${curRes.status}`)
       }
 
-      const data = await res.json()
+      const [curData, h1h, h24h, h7d, h30d] = await Promise.all([
+        curRes.json(),
+        h1hRes.ok  ? h1hRes.json()  : null,
+        h24hRes.ok ? h24hRes.json() : null,
+        h7dRes.ok  ? h7dRes.json()  : null,
+        h30dRes.ok ? h30dRes.json() : null,
+      ])
 
-      const upserts = data.map(coin => ({
-        coingecko_id: coin.id,
-        symbol: coin.id,
-        price_usd: coin.current_price,
-        updated_at: new Date().toISOString(),
-      }))
-      if (upserts.length) {
-        await supabase.from('price_cache').upsert(upserts, { onConflict: 'coingecko_id' })
-      }
-
-      lastFetchedAt = Date.now()
       const prices     = {}
       const changes    = {}
       const marketData = {}
+      const pct = (cur, old) => (cur != null && old != null && old > 0) ? ((cur - old) / old) * 100 : null
 
-      for (const coin of data) {
-        prices[coin.id]     = coin.current_price
-        changes[coin.id]    = coin.price_change_percentage_24h ?? null
-        marketData[coin.id] = {
-          change1h:  coin.price_change_percentage_1h_in_currency ?? null,
-          change24h: coin.price_change_percentage_24h ?? null,
-          change7d:  coin.price_change_percentage_7d_in_currency ?? null,
-          change30d: coin.price_change_percentage_30d_in_currency ?? null,
-          sparkline: coin.sparkline_in_7d?.price ?? [],
+      for (const id of coingeckoIds) {
+        const key     = `coingecko:${id}`
+        const current = curData?.coins?.[key]
+        if (!current) continue
+
+        const cur  = current.price
+        prices[id] = cur
+
+        const c1h  = pct(cur, h1h?.coins?.[key]?.price)
+        const c24h = pct(cur, h24h?.coins?.[key]?.price)
+        const c7d  = pct(cur, h7d?.coins?.[key]?.price)
+        const c30d = pct(cur, h30d?.coins?.[key]?.price)
+
+        changes[id]    = c24h
+        marketData[id] = {
+          change1h:  c1h,
+          change24h: c24h,
+          change7d:  c7d,
+          change30d: c30d,
+          sparkline: [],
         }
       }
 
-      // IDs CoinGecko returned nothing for → fill from DB cache
+      // Persist to DB cache so warmFromDb works on next load
+      const upserts = Object.entries(prices).map(([coingecko_id, price_usd]) => ({
+        coingecko_id,
+        symbol: coingecko_id,
+        price_usd,
+        updated_at: new Date().toISOString(),
+      }))
+      if (upserts.length) {
+        supabase.from('price_cache').upsert(upserts, { onConflict: 'coingecko_id' })
+      }
+
+      // Fill any IDs DeFiLlama returned nothing for from DB
       const missingIds = coingeckoIds.filter(id => !(id in prices))
       if (missingIds.length) {
         const db = await readFromDbCache(missingIds)
         Object.assign(prices, db)
       }
 
-      // Persist to in-memory cache (merge so previously-known prices aren't wiped)
-      cachedPrices   = { ...cachedPrices, ...prices }
-      cachedChanges  = changes
+      lastFetchedAt    = Date.now()
+      cachedPrices     = { ...cachedPrices, ...prices }
+      cachedChanges    = changes
       cachedMarketData = marketData
       return { prices: { ...cachedPrices }, changes, marketData }
 
     } catch (err) {
-      // Any failure: serve stale in-memory prices + fill gaps from DB
-      lastFetchedAt = Date.now()  // prevent tight retry loop
+      lastFetchedAt = Date.now()
       const missing = coingeckoIds.filter(id => !(id in cachedPrices))
       if (missing.length) {
         const db = await readFromDbCache(missing)
@@ -119,9 +141,10 @@ export function resetPriceCache() {
   lastFetchedAt = null
 }
 
+// CoinGecko still used for symbol→id lookup (DeFiLlama has no search endpoint)
 export async function lookupCoinGeckoId(symbol) {
   try {
-    const res = await fetch(`${COINGECKO_BASE}/search?query=${encodeURIComponent(symbol)}`)
+    const res = await fetch(`${CG_BASE}/search?query=${encodeURIComponent(symbol)}`)
     if (!res.ok) return null
     const { coins = [] } = await res.json()
     const match = coins.find(c => c.symbol.toUpperCase() === symbol.toUpperCase())
