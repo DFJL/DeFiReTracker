@@ -3,17 +3,20 @@ import { computeAssetPnl } from '../utils/pnl'
 import { fmtUsd, fmtPct, fmtQty, fmtDate, pnlClass } from '../utils/format'
 
 // ── Classification regexes ──────────────────────────────────────────────────
-const LP_RX      = /lps?\b|liquidity|pool|\bfee(s)?\b|\bdif\b/i
-const AIRDROP_RX = /airdrop|\bdrop\b|claim|genesis|snapshot/i
-const STAKING_RX = /stak|yield|\bearn\b|validator|interest|bond/i
+const LP_RX       = /lps?\b|liquidity|pool|\bfee(s)?\b|\bdif\b|\bfarm\b|vault|\bearning/i
+const AIRDROP_RX  = /airdrop|\bdrop\b|claim|genesis|snapshot/i
+const STAKING_RX  = /stak|yield|\bearn\b|validator|interest|bond|\basr\b|reward/i
+// transfer_in where the note implies "sold X to get this" — it's a purchase, not income
+const PURCHASE_RX = /\bsell\b|\brepay\b|\btp\d+\b|take.?profit|\bfrom\s+\w+\s+to\b/i
 
 function classifyTx(tx) {
   const notes = tx.notes ?? ''
   const price = Number(tx.price_usd)
-  if (tx.type === 'deposit' || tx.type === 'withdrawal') return null  // cash flows, not income
+  if (tx.type === 'deposit' || tx.type === 'withdrawal') return null
   if (tx.type === 'sell') return 'realized'
   if (tx.type === 'buy' || tx.type === 'transfer_out') return null
   if (tx.type === 'transfer_in' && price > 0) return null  // paid transfer = cost, not income
+  if (PURCHASE_RX.test(notes)) return null  // acquired by selling another asset
   if (LP_RX.test(notes))      return 'lp'
   if (AIRDROP_RX.test(notes)) return 'airdrop'
   if (STAKING_RX.test(notes)) return 'staking'
