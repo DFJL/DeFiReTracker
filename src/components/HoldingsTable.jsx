@@ -355,7 +355,9 @@ export function HoldingsTable({ transactions, assets, prices, changes, marketDat
                 </tr>
               ) : rows.map(row => {
                 const changeVal = getChange(row.coingecko_id)
-                const sparkline = sparklines[row.id] ?? marketData[row.coingecko_id]?.sparkline
+                // Prefer marketData sparkline (loads with prices, ~1s) over historical (slower)
+                const mdSparkline = marketData[row.coingecko_id]?.sparkline
+                const sparkline = (mdSparkline?.length > 1 ? mdSparkline : null) ?? sparklines[row.id]
                 return (
                   <>
                   <tr
