@@ -19,10 +19,8 @@ export function usePortfolioHistory(transactions, assets) {
     setLoading(true)
 
     Promise.all(
-      assets.map((asset, i) =>
-        new Promise(resolve => setTimeout(resolve, i * 300)).then(() =>
-          fetchHistoricalPrices(asset.coingecko_id, fromDate).then(prices => [asset.id, prices])
-        )
+      assets.map(asset =>
+        fetchHistoricalPrices(asset.coingecko_id, fromDate).then(prices => [asset.id, prices])
       )
     )
       .then(results => {
