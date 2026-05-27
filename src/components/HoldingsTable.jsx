@@ -375,6 +375,11 @@ export function HoldingsTable({ transactions, assets, prices, changes, marketDat
                       </div>
                       <div className="flex items-center gap-1.5 mt-0.5">
                         <span className="text-xs text-gray-500">{row.name}</span>
+                        {sparkline?.length > 1 && (
+                          <span className="lg:hidden ml-1">
+                            <Sparkline data={sparkline} width={48} height={18} />
+                          </span>
+                        )}
                         {onUpdateAsset && (
                           <button
                             onClick={e => { e.stopPropagation(); editingId === row.id ? setEditingId(null) : startEdit(row) }}
