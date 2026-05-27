@@ -102,8 +102,11 @@ export function usePortfolioHistory(transactions, assets) {
       }
     })
 
-    // Trim leading entries where both lines are zero (before any activity)
-    const firstMeaningful = computed.findIndex(p => p.value > 0 || p.netDeposited > 0)
+    // Trim leading entries where portfolio value is negligible (<$100).
+    // Net deposits may already be non-zero (historical deposits), but if the
+    // portfolio value is still $0 the chart just shows a flat bottom line —
+    // the deposits line will clip above the value-scaled Y-axis anyway.
+    const firstMeaningful = computed.findIndex(p => p.value >= 100)
     return firstMeaningful > 0 ? computed.slice(firstMeaningful) : computed
   }, [historicalPrices, transactions, assets, fromDate])
 

@@ -53,14 +53,18 @@ export function PortfolioChart({ timeline, loading }) {
 
   const yMin = useMemo(() => {
     if (!filtered.length) return 0
-    const vals = filtered.flatMap(d => [d.value, d.netDeposited])
-    return Math.floor(Math.min(0, ...vals) * 1.05)
+    // Accommodate negative net deposits (house money territory)
+    const minDep = Math.min(...filtered.map(d => d.netDeposited))
+    return Math.floor(Math.min(0, minDep) * 1.05)
   }, [filtered])
 
   const yMax = useMemo(() => {
     if (!filtered.length) return 0
-    const vals = filtered.flatMap(d => [d.value, d.netDeposited])
-    return Math.ceil(Math.max(...vals) * 1.05)
+    // Scale to portfolio VALUE, not deposits — deposits may be much higher
+    // historically and will clip above the chart until withdrawals bring them
+    // into the visible range.
+    const maxValue = Math.max(...filtered.map(d => d.value))
+    return Math.ceil(maxValue * 1.15)
   }, [filtered])
 
   return (
