@@ -261,6 +261,7 @@ export default function App() {
               onAudit={() => setAuditOpen(true)}
               portfolioId={portfolioId}
               onBulkInsert={bulkInsert}
+              loadingPrices={loadingPrices}
             />
           )}
 
