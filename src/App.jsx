@@ -270,6 +270,7 @@ export default function App() {
               onBulkInsert={bulkInsert}
               loadingPrices={loadingPrices}
               historicalPrices={historicalPrices}
+              assetChanges={assetChanges}
             />
           )}
 
