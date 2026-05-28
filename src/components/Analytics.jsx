@@ -3,11 +3,11 @@ import { computeAssetPnl } from '../utils/pnl'
 import { fmtUsd, fmtPct, fmtQty, fmtDate, pnlClass } from '../utils/format'
 
 // ── Classification regexes ──────────────────────────────────────────────────
-const LP_RX       = /lps?\b|liquidity|pool|\bfee(s)?\b|\bdif\b|\bfarm\b|vault|\bearning/i
+const LP_RX       = /lps?\b|liquidity|pool|\bfee(s)?\b|\bfarm\b|vault|\bearning/i
 const AIRDROP_RX  = /airdrop|\bdrop\b|claim|genesis|snapshot/i
 const STAKING_RX  = /stak|yield|\bearn\b|validator|interest|bond|\basr\b|reward/i
-// transfer_in where the note implies "sold X to get this" — it's a purchase, not income
-const PURCHASE_RX = /\bsell\b|\brepay\b|\btp\d+\b|take.?profit|\bfrom\s+\w+\s+to\b/i
+// transfer_in where the note implies "sold X to get this" or is an LP differential — it's a purchase/adjustment, not income
+const PURCHASE_RX = /\bsell\b|\brepay\b|\btp\d+\b|take.?profit|\bfrom\s+\w+\s+to\b|\bdif\b/i
 
 function classifyTx(tx) {
   const notes = tx.notes ?? ''
