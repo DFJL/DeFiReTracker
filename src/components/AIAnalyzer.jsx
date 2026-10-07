@@ -46,7 +46,7 @@ export function AIAnalyzer({ portfolioData }) {
       const { data, error: fnErr } = await supabase.functions.invoke('ai-analyzer', {
         body: { mode, portfolio: portfolioData },
       })
-      if (fnErr) throw new Error(fnErr.message)
+      if (fnErr) throw new Error(data?.error ?? fnErr.message)
       if (data?.error) throw new Error(data.error)
       setResult(r => ({ ...r, [mode]: data.result }))
     } catch (e) {
