@@ -51,7 +51,12 @@ export function Dashboard({ transactions, assets, prices, changes, pmktSummary, 
   const topPerformer = useMemo(() => {
     let changesForPeriod
     if (topPerfPeriod === '1D') {
-      changesForPeriod = changes
+      // Live 24h from price service; fall back to daily diff from historical data if unavailable
+      changesForPeriod = {}
+      for (const row of assetRows) {
+        const id = row.coingecko_id
+        changesForPeriod[id] = changes[id] ?? assetChanges[id]?.change1d ?? null
+      }
     } else {
       const key = topPerfPeriod === '7D' ? 'change7d' : 'change30d'
       changesForPeriod = {}
