@@ -64,7 +64,7 @@ export function Dashboard({ transactions, assets, prices, changes, pmktSummary, 
         bestPct = chg; best = { symbol: row.symbol, pct: chg }
       }
     }
-    return best && bestPct > 0 ? best : null
+    return best
   }, [assetRows, changes, assetChanges, topPerfPeriod])
 
   const combinedTotal    = totalValue + (pmktSummary?.value ?? 0)
@@ -166,7 +166,7 @@ export function Dashboard({ transactions, assets, prices, changes, pmktSummary, 
           </p>
           {topPerformer
             ? <p className={`text-xs mt-0.5 num ${pnlClass(topPerformer.pct)}`}>{fmtPct(topPerformer.pct)}</p>
-            : <p className="text-xs mt-0.5 text-gray-500">no positive mover</p>
+            : <p className="text-xs mt-0.5 text-gray-500">data unavailable</p>
           }
         </div>
       </div>
