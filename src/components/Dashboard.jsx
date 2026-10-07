@@ -69,9 +69,8 @@ export function Dashboard({ transactions, assets, prices, changes, pmktSummary, 
         bestPct = chg; best = { symbol: row.symbol, pct: chg }
       }
     }
-    if (bestPct === -Infinity) return null        // no price data at all
-    if (bestPct <= 0) return { symbol: null, pct: bestPct }  // data but all flat/down
-    return best
+    if (bestPct === -Infinity) return null  // no price data at all
+    return best                             // always show best, even if negative
   }, [assetRows, changes, assetChanges, topPerfPeriod])
 
   const combinedTotal    = totalValue + (pmktSummary?.value ?? 0)
@@ -171,11 +170,9 @@ export function Dashboard({ transactions, assets, prices, changes, pmktSummary, 
           <p className={`text-xl font-semibold num leading-tight ${topPerformer?.symbol ? pnlClass(topPerformer.pct) : ''}`}>
             {topPerformer?.symbol ?? '—'}
           </p>
-          {topPerformer?.symbol
+          {topPerformer != null
             ? <p className={`text-xs mt-0.5 num ${pnlClass(topPerformer.pct)}`}>{fmtPct(topPerformer.pct)}</p>
-            : topPerformer !== null
-              ? <p className="text-xs mt-0.5 text-gray-500">flat / all down</p>
-              : <p className="text-xs mt-0.5 text-gray-500">data unavailable</p>
+            : <p className="text-xs mt-0.5 text-gray-500">data unavailable</p>
           }
         </div>
       </div>
