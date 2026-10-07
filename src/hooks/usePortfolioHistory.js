@@ -102,6 +102,7 @@ export function usePortfolioHistory(transactions, assets) {
   }, [historicalPrices, transactions, assets, fromDate])
 
   const assetChanges = useMemo(() => {
+    const d1  = new Date(Date.now() - 1  * 86_400_000).toISOString().slice(0, 10)
     const d7  = new Date(Date.now() - 7  * 86_400_000).toISOString().slice(0, 10)
     const d30 = new Date(Date.now() - 30 * 86_400_000).toISOString().slice(0, 10)
     const result = {}
@@ -110,11 +111,15 @@ export function usePortfolioHistory(transactions, assets) {
       if (!prices.length) continue
       const sorted = [...prices].sort((a, b) => a.date.localeCompare(b.date))
       const latest = sorted[sorted.length - 1]
-      const at7d  = [...sorted].reverse().find(p => p.date <= d7)
-      const at30d = [...sorted].reverse().find(p => p.date <= d30)
+      const rev    = [...sorted].reverse()
+      const at1d  = rev.find(p => p.date <= d1)
+      const at7d  = rev.find(p => p.date <= d7)
+      const at30d = rev.find(p => p.date <= d30)
+      const pct = (a, b) => (a && b?.price > 0) ? ((a.price - b.price) / b.price) * 100 : null
       result[asset.coingecko_id] = {
-        change7d:  at7d  && at7d.price  > 0 ? ((latest.price - at7d.price)  / at7d.price)  * 100 : null,
-        change30d: at30d && at30d.price > 0 ? ((latest.price - at30d.price) / at30d.price) * 100 : null,
+        change1d:  pct(latest, at1d),
+        change7d:  pct(latest, at7d),
+        change30d: pct(latest, at30d),
       }
     }
     return result
