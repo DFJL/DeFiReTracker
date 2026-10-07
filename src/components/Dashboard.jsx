@@ -64,6 +64,8 @@ export function Dashboard({ transactions, assets, prices, changes, pmktSummary, 
         bestPct = chg; best = { symbol: row.symbol, pct: chg }
       }
     }
+    if (bestPct === -Infinity) return null        // no price data at all
+    if (bestPct <= 0) return { symbol: null, pct: bestPct }  // data but all flat/down
     return best
   }, [assetRows, changes, assetChanges, topPerfPeriod])
 
@@ -161,12 +163,14 @@ export function Dashboard({ transactions, assets, prices, changes, pmktSummary, 
               ))}
             </div>
           </div>
-          <p className={`text-xl font-semibold num leading-tight ${topPerformer ? pnlClass(topPerformer.pct) : ''}`}>
-            {topPerformer ? topPerformer.symbol : '—'}
+          <p className={`text-xl font-semibold num leading-tight ${topPerformer?.symbol ? pnlClass(topPerformer.pct) : ''}`}>
+            {topPerformer?.symbol ?? '—'}
           </p>
-          {topPerformer
+          {topPerformer?.symbol
             ? <p className={`text-xs mt-0.5 num ${pnlClass(topPerformer.pct)}`}>{fmtPct(topPerformer.pct)}</p>
-            : <p className="text-xs mt-0.5 text-gray-500">data unavailable</p>
+            : topPerformer !== null
+              ? <p className="text-xs mt-0.5 text-gray-500">flat / all down</p>
+              : <p className="text-xs mt-0.5 text-gray-500">data unavailable</p>
           }
         </div>
       </div>
