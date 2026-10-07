@@ -164,9 +164,10 @@ export function Dashboard({ transactions, assets, prices, changes, pmktSummary, 
           <p className={`text-xl font-semibold num leading-tight ${topPerformer ? pnlClass(topPerformer.pct) : ''}`}>
             {topPerformer ? topPerformer.symbol : '—'}
           </p>
-          {topPerformer && (
-            <p className={`text-xs mt-0.5 num ${pnlClass(topPerformer.pct)}`}>{fmtPct(topPerformer.pct)}</p>
-          )}
+          {topPerformer
+            ? <p className={`text-xs mt-0.5 num ${pnlClass(topPerformer.pct)}`}>{fmtPct(topPerformer.pct)}</p>
+            : <p className="text-xs mt-0.5 text-gray-500">no positive mover</p>
+          }
         </div>
       </div>
 
