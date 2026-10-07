@@ -64,7 +64,7 @@ export function Dashboard({ transactions, assets, prices, changes, pmktSummary, 
         bestPct = chg; best = { symbol: row.symbol, pct: chg }
       }
     }
-    return best
+    return best && bestPct > 0 ? best : null
   }, [assetRows, changes, assetChanges, topPerfPeriod])
 
   const combinedTotal    = totalValue + (pmktSummary?.value ?? 0)
