@@ -108,7 +108,30 @@ export async function fetchPrices(coingeckoIds) {
         supabase.from('price_cache').upsert(upserts, { onConflict: 'coingecko_id' })
       }
 
-      // Fill any IDs DeFiLlama returned nothing for from DB
+      // CoinGecko fallback for tokens DeFiLlama doesn't index (e.g. tokenized RWAs like SPYX)
+      const cgMissing = coingeckoIds.filter(id => !(id in prices))
+      if (cgMissing.length) {
+        try {
+          const cgRes = await fetch(
+            `${CG_BASE}/simple/price?ids=${cgMissing.join(',')}&vs_currencies=usd&include_24hr_change=true`
+          )
+          if (cgRes.ok) {
+            const cgData = await cgRes.json()
+            for (const id of cgMissing) {
+              const coin = cgData[id]
+              if (!coin?.usd) continue
+              prices[id]     = coin.usd
+              changes[id]    = coin.usd_24h_change ?? null
+              marketData[id] = {
+                change1h: null, change24h: coin.usd_24h_change ?? null,
+                change7d: null, change30d: null, sparkline: [],
+              }
+            }
+          }
+        } catch { /* ignore CG fallback failures */ }
+      }
+
+      // Fill any IDs still missing from DB cache
       const missingIds = coingeckoIds.filter(id => !(id in prices))
       if (missingIds.length) {
         const db = await readFromDbCache(missingIds)
