@@ -25,7 +25,7 @@ export function Dashboard({ transactions, assets, prices, changes, pmktSummary, 
         if (!txs.length) return null
         const price = prices[asset.coingecko_id]
         const pnl = computeAssetPnl(txs, price)
-        return { ...asset, ...pnl }
+        return { ...asset, ...pnl, currentPrice: price ?? null }
       })
       .filter(Boolean)
   }, [transactions, assets, prices])
@@ -60,7 +60,7 @@ export function Dashboard({ transactions, assets, prices, changes, pmktSummary, 
     let best = null, bestPct = -Infinity
     for (const row of assetRows) {
       const chg = changesForPeriod[row.coingecko_id]
-      if (chg != null && row.currentValue > 0 && chg > bestPct) {
+      if (chg != null && row.currentValue > 0 && row.category !== 'stablecoin' && chg > bestPct) {
         bestPct = chg; best = { symbol: row.symbol, pct: chg }
       }
     }
