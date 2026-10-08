@@ -11,6 +11,7 @@ import { TransactionManager } from './components/TransactionManager'
 import { CsvImporter } from './components/CsvImporter'
 import { PolymarketTracker } from './components/PolymarketTracker'
 import { Analytics } from './components/Analytics'
+import { LpManager } from './components/LpManager'
 import { DataAudit } from './components/DataAudit'
 import { supabase } from './lib/supabase'
 import { lookupCoinGeckoId } from './lib/priceService'
@@ -20,6 +21,7 @@ const TABS = [
   { id: 'Holdings',     label: 'Holdings',    short: 'Assets', icon: IconHoldings },
   { id: 'Analytics',   label: 'Analytics',   short: 'Stats',  icon: IconAnalytics },
   { id: 'Transactions', label: 'Transactions',short: 'Txs',    icon: IconTxs },
+  { id: 'LP',           label: 'LP Manager',  short: 'LP',     icon: IconLp },
   { id: 'Import CSV',   label: 'Import CSV',  short: 'Import', icon: IconImport },
   { id: 'Polymarket',   label: 'Polymarket',  short: 'PMKT',   icon: IconPmkt },
 ]
@@ -53,6 +55,13 @@ function IconTxs({ cls }) {
       <line x1="8" y1="6" x2="21" y2="6" /><line x1="8" y1="12" x2="21" y2="12" />
       <line x1="8" y1="18" x2="21" y2="18" /><line x1="3" y1="6" x2="3.01" y2="6" />
       <line x1="3" y1="12" x2="3.01" y2="12" /><line x1="3" y1="18" x2="3.01" y2="18" />
+    </svg>
+  )
+}
+function IconLp({ cls }) {
+  return (
+    <svg className={cls} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <circle cx="9" cy="12" r="6" /><circle cx="15" cy="12" r="6" />
     </svg>
   )
 }
@@ -293,6 +302,10 @@ export default function App() {
               onBatchDelete={batchDelete}
               onBulkInsert={bulkInsert}
             />
+          )}
+
+          {activeTab === 'LP' && (
+            <LpManager portfolioId={portfolioId} prices={prices} />
           )}
 
           {activeTab === 'Import CSV' && (

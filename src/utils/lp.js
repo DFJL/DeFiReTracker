@@ -148,3 +148,50 @@ export function underlyingHoldings(snapshot) {
     { token: 1, qty: snapshot.amount1, price: snapshot.price1, valueUsd: snapshot.amount1 * snapshot.price1 },
   ]
 }
+
+/** Map a crypto.lp_snapshots row to the engine's snapshot shape. */
+export function fromDbSnapshot(r) {
+  const hasFlow = r.flow0 != null && r.flow1 != null
+  return {
+    id: r.id,
+    ts: r.ts,
+    shares: Number(r.shares),
+    amount0: Number(r.amount0),
+    amount1: Number(r.amount1),
+    price0: Number(r.price0_usd),
+    price1: Number(r.price1_usd),
+    flow: hasFlow ? { amount0: Number(r.flow0), amount1: Number(r.flow1) } : undefined,
+  }
+}
+
+/**
+ * Build crypto.lp_events rows for a position from its stored snapshots, each tied back to the
+ * snapshot (and previous snapshot) that produced it. Throws if any interval is invalid.
+ */
+export function buildEventRows(position, dbSnapshots) {
+  const sorted = [...dbSnapshots].sort((a, b) => new Date(a.ts) - new Date(b.ts))
+  const rows = []
+  let prev = null
+  for (const row of sorted) {
+    const snap = fromDbSnapshot(row)
+    for (const e of diffSnapshots(prev, snap, { pairType: position.pair_type })) {
+      rows.push({
+        position_id: position.id,
+        portfolio_id: position.portfolio_id,
+        snapshot_id: row.id,
+        prev_snapshot_id: prev?.id ?? null,
+        ts: e.ts,
+        kind: e.kind,
+        amount0: e.amount0 ?? null,
+        amount1: e.amount1 ?? null,
+        value_usd: e.valueUsd,
+        price_usd: e.priceUsd ?? null,
+        il_usd: e.ilUsd ?? null,
+        fees_usd: e.feesUsd ?? null,
+        other_usd: e.otherUsd ?? null,
+      })
+    }
+    prev = snap
+  }
+  return rows
+}

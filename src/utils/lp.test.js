@@ -75,3 +75,23 @@ test('rejects bad input', () => {
   assert.throws(() => diffSnapshots(null, { ...open, shares: 0 }), /shares is 0/)
   assert.throws(() => diffSnapshots(open, { ...open, ts: '2025-01-01' }), /older/)
 })
+
+import { buildEventRows, fromDbSnapshot } from './lp.js'
+
+test('buildEventRows ties each event to its snapshot and previous snapshot', () => {
+  const db = [
+    { id: 's2', ts: '2026-02-01', shares: 100, amount0: 1.01, amount1: 2020, price0_usd: 2000, price1_usd: 1 },
+    { id: 's1', ts: '2026-01-01', shares: 100, amount0: 1, amount1: 2000, price0_usd: 2000, price1_usd: 1 },
+  ]
+  const rows = buildEventRows({ id: 'p', portfolio_id: 'pf', pair_type: 'v2' }, db)
+  assert.deepEqual(rows.map(r => [r.kind, r.snapshot_id, r.prev_snapshot_id]),
+    [['deposit', 's1', null], ['performance', 's2', 's1']])
+  near(rows[1].fees_usd, 40)
+  assert.equal(rows[0].portfolio_id, 'pf')
+})
+
+test('fromDbSnapshot only sets flow when both amounts are present', () => {
+  const base = { id: 'x', ts: '2026-01-01', shares: '1', amount0: '1', amount1: '1', price0_usd: '1', price1_usd: '1' }
+  assert.equal(fromDbSnapshot(base).flow, undefined)
+  assert.deepEqual(fromDbSnapshot({ ...base, flow0: '2', flow1: '3' }).flow, { amount0: 2, amount1: 3 })
+})
