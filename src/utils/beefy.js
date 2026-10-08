@@ -36,8 +36,10 @@ export function parseBeefyHistory(text, { swap = false } = {}) {
     })
   })
 
-  rows.sort((a, b) => new Date(a.ts) - new Date(b.ts))
-  return { rows, errors }
+  // Overlapping screenshots repeat rows: keep one per timestamp.
+  const unique = [...new Map(rows.map(r => [r.ts, r])).values()]
+  unique.sort((a, b) => new Date(a.ts) - new Date(b.ts))
+  return { rows: unique, errors }
 }
 
 /** Flip which token a parsed row's amounts belong to. */
@@ -60,4 +62,25 @@ export function detectSwap(rows) {
   const straight = priced.reduce((s, r) => s + err(r), 0)
   const flipped = priced.reduce((s, r) => s + err(swapRow(r)), 0)
   return flipped < straight
+}
+
+/**
+ * Internal consistency of parsed rows, independent of prices. A deposit's size must equal the
+ * share increase times the vault's amounts per share, and the first row's deposit must equal
+ * its balance. Rows that fail usually contain a misread or mistyped number.
+ * Returns an array parallel to `rows`: { ok, problem? }.
+ */
+export function checkRows(rows, tol = 5e-4) {
+  const rel = (a, b) => Math.abs(a - b) / Math.max(Math.abs(a), Math.abs(b), 1e-12)
+  return rows.map((r, i) => {
+    const prevShares = i === 0 ? 0 : rows[i - 1].shares
+    const dShares = r.shares - prevShares
+    if (r.shares <= 0) return { ok: true }
+    const inferred0 = Math.abs(dShares) * (r.amount0 / r.shares)
+    const inferred1 = Math.abs(dShares) * (r.amount1 / r.shares)
+    if (rel(inferred0, r.moved0) > tol || rel(inferred1, r.moved1) > tol) {
+      return { ok: false, problem: 'amounts don\'t add up with shares' }
+    }
+    return { ok: true }
+  })
 }

@@ -1,6 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { parseBeefyHistory, detectSwap, swapRow } from './beefy.js'
+import { parseBeefyHistory, detectSwap, swapRow, checkRows } from './beefy.js'
 import { summarizePosition } from './lp.js'
 
 // Real ETH/HYPE CLM vault history as pasted from Beefy (HYPE first, then ETH).
@@ -148,4 +148,20 @@ test('detectSwap picks the token order that matches Beefy USD balances', () => {
   assert.equal(detectSwap(asHypeEth), false)
   assert.equal(detectSwap(rows), null)         // no prices yet
   assert.equal(swapRow(rows[0]).amount0, rows[0].amount1)
+})
+
+test('overlapping screenshots do not duplicate rows', () => {
+  const twice = PASTED + '\n' + PASTED.split('HyperEVM\n13 Mar')[1].replace(/^/, 'HyperEVM\n13 Mar')
+  const { rows } = parseBeefyHistory(twice)
+  assert.equal(rows.length, 8)
+})
+
+test('checkRows passes real data and flags a misread digit', () => {
+  const { rows } = parseBeefyHistory(PASTED)
+  assert.ok(checkRows(rows).every(c => c.ok))
+  const bad = rows.map(r => ({ ...r }))
+  bad[3].amount0 = 54.434005 * 1.2          // e.g. an OCR slip in a balance
+  const flags = checkRows(bad)
+  assert.equal(flags[3].ok, false)
+  assert.equal(flags.filter(f => !f.ok).length, 1)   // only the tampered row is flagged
 })
