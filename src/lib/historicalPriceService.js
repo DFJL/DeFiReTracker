@@ -61,20 +61,39 @@ export function clearHistoricalCache() {
 }
 
 /**
- * Price of each coin at one moment (DeFiLlama point-in-time endpoint, one call per coin).
+ * Price of each coin at one moment. Tries DeFiLlama's point-in-time endpoint first, then the
+ * daily chart endpoint the rest of the app already relies on (nearest point wins).
  * Returns { [coingeckoId]: price | null }.
  */
 export async function fetchPricesAt(coingeckoIds, isoTs) {
   const t = Math.floor(new Date(isoTs).getTime() / 1000)
+  const key = id => `coingecko:${id}`
+
+  async function pointInTime(id) {
+    const res = await fetch(`https://coins.llama.fi/prices/historical/${t}/${key(id)}`)
+    if (!res.ok) return null
+    const data = await res.json()
+    return data.coins?.[key(id)]?.price ?? null
+  }
+
+  async function nearestDaily(id) {
+    const res = await fetch(`https://coins.llama.fi/chart/${key(id)}?start=${t - 86_400}&span=3&period=1d`)
+    if (!res.ok) return null
+    const data = await res.json()
+    const pts = data.coins?.[key(id)]?.prices ?? []
+    if (!pts.length) return null
+    return pts.reduce((best, p) => Math.abs(p.timestamp - t) < Math.abs(best.timestamp - t) ? p : best).price
+  }
+
   const entries = await Promise.all(coingeckoIds.map(async id => {
-    try {
-      const res = await fetch(`https://coins.llama.fi/prices/historical/${t}?coins=coingecko:${id}`)
-      if (!res.ok) return [id, null]
-      const data = await res.json()
-      return [id, data.coins?.[`coingecko:${id}`]?.price ?? null]
-    } catch {
-      return [id, null]
+    if (!id) return [id, null]
+    for (const lookup of [pointInTime, nearestDaily]) {
+      try {
+        const price = await lookup(id)
+        if (price != null) return [id, price]
+      } catch { /* try the next source */ }
     }
+    return [id, null]
   }))
   return Object.fromEntries(entries)
 }
