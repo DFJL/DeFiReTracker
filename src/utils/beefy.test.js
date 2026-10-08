@@ -1,6 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { parseBeefyHistory } from './beefy.js'
+import { parseBeefyHistory, detectSwap, swapRow } from './beefy.js'
 import { summarizePosition } from './lp.js'
 
 // Real ETH/HYPE CLM vault history as pasted from Beefy (HYPE first, then ETH).
@@ -134,4 +134,18 @@ test('engine infers the exact deposits from share changes alone (model check on 
     assert.ok(Math.abs(deposits[i].amount1 - r.moved1) / r.moved1 < 1e-5, `ETH deposit ${i}`)
   })
   assert.ok(Math.abs(sum.reconcileDiffUsd) < 1e-6)
+})
+
+test('detectSwap picks the token order that matches Beefy USD balances', () => {
+  const { rows } = parseBeefyHistory(PASTED) // Beefy order: HYPE first, ETH second
+  // Rough prices per row: HYPE ~ 40-90, ETH ~ 2000-2600, derived so the value is close to Beefy's USD.
+  const hype = 55, eth = 2300
+  // Position order ETH/HYPE (token0 = ETH): prices attach to token0/token1, amounts are in Beefy order.
+  const asEthHype = rows.map(r => ({ ...r, price0: eth, price1: hype }))
+  assert.equal(detectSwap(asEthHype), true)   // amounts must be flipped
+  // Position order HYPE/ETH matches Beefy: no flip.
+  const asHypeEth = rows.map(r => ({ ...r, price0: hype, price1: eth }))
+  assert.equal(detectSwap(asHypeEth), false)
+  assert.equal(detectSwap(rows), null)         // no prices yet
+  assert.equal(swapRow(rows[0]).amount0, rows[0].amount1)
 })

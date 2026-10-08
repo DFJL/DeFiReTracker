@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react'
-import { parseBeefyHistory } from '../utils/beefy'
+import { parseBeefyHistory, swapRow, detectSwap } from '../utils/beefy'
 import { summarizePosition } from '../utils/lp'
 import { fetchPricesAt } from '../lib/historicalPriceService'
 import { fmtUsd, fmtQty, fmtDate, pnlClass } from '../utils/format'
@@ -14,7 +14,8 @@ const CHECK_WARN_PCT = 8
 export function LpBeefyImport({ position, existingCount, prices, onSave, onCancel }) {
   const [text, setText] = useState('')
   const [swap, setSwap] = useState(false)
-  const [rows, setRows] = useState(null)          // parsed rows with editable prices
+  const [raw, setRaw] = useState(null)            // parsed rows in Beefy's token order, with editable prices
+  const [detected, setDetected] = useState(null)  // note about the auto-detected token order
   const [errors, setErrors] = useState([])
   const [fetching, setFetching] = useState(false)
   const [current, setCurrent] = useState({ shares: '', amount0: '', amount1: '', fees: '' })
@@ -25,20 +26,27 @@ export function LpBeefyImport({ position, existingCount, prices, onSave, onCance
 
   async function parse() {
     setSaveError(null)
-    const { rows: parsed, errors: errs } = parseBeefyHistory(text, { swap })
+    const { rows: parsed, errors: errs } = parseBeefyHistory(text)
     setErrors(errs)
-    if (!parsed.length) { setRows(null); return }
+    if (!parsed.length) { setRaw(null); return }
     setFetching(true)
     const ids = [position.token0?.coingecko_id, position.token1?.coingecko_id]
     const priced = await Promise.all(parsed.map(async r => {
       const p = await fetchPricesAt(ids, r.ts)
       return { ...r, price0: p[ids[0]] ?? '', price1: p[ids[1]] ?? '' }
     }))
-    setRows(priced)
+    const flip = detectSwap(priced)
+    if (flip != null) {
+      setSwap(flip)
+      setDetected(flip ? `Beefy lists ${s1} first — amounts matched to the right tokens.` : null)
+    }
+    setRaw(priced)
     setFetching(false)
   }
 
-  const setPrice = (i, k, v) => setRows(rs => rs.map((r, j) => j === i ? { ...r, [k]: v } : r))
+  // Prices belong to the position's token0/token1; flipping the order only moves the amounts.
+  const rows = useMemo(() => (raw ? raw.map(r => (swap ? swapRow(r) : r)) : null), [raw, swap])
+  const setPrice = (i, k, v) => setRaw(rs => rs.map((r, j) => j === i ? { ...r, [k]: v } : r))
 
   // Engine-shaped snapshots: history rows, plus an optional "current" snapshot.
   const snapshots = useMemo(() => {
@@ -112,6 +120,7 @@ export function LpBeefyImport({ position, existingCount, prices, onSave, onCance
         </button>
       </div>
 
+      {detected && <p className="text-xs text-accent">{detected}</p>}
       {errors.map((e, i) => <p key={i} className="text-xs text-loss">{e}</p>)}
 
       {rows && (
@@ -168,6 +177,13 @@ export function LpBeefyImport({ position, existingCount, prices, onSave, onCance
             </div>
           </div>
 
+          {rows.length > 0 && current.shares !== '' &&
+            Math.abs(Number(current.shares) - rows[rows.length - 1].shares) > 1e-3 * rows[rows.length - 1].shares && (
+            <p className="text-xs text-yellow-500">
+              Current shares ({fmtQty(Number(current.shares))}) differ from the last pasted row ({fmtQty(rows[rows.length - 1].shares)}).
+              Rows are probably missing from the paste; the difference would be booked as a deposit today.
+            </p>
+          )}
           {preview.error && <p className="text-xs text-loss">{preview.error}</p>}
           {preview.summary && (
             <div className="rounded border border-border bg-surface-2 px-3 py-2 text-xs grid grid-cols-2 sm:grid-cols-4 gap-2">

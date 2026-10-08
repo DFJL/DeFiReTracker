@@ -39,3 +39,25 @@ export function parseBeefyHistory(text, { swap = false } = {}) {
   rows.sort((a, b) => new Date(a.ts) - new Date(b.ts))
   return { rows, errors }
 }
+
+/** Flip which token a parsed row's amounts belong to. */
+export function swapRow(r) {
+  return { ...r, moved0: r.moved1, moved1: r.moved0, amount0: r.amount1, amount1: r.amount0 }
+}
+
+/**
+ * Decide whether Beefy listed the position's tokens in reverse order: the orientation whose
+ * value (amounts x prices) lands closest to Beefy's own USD balance wins.
+ * Rows need price0/price1; returns null when there are no priced rows to compare.
+ */
+export function detectSwap(rows) {
+  const err = r => {
+    const v = r.amount0 * Number(r.price0) + r.amount1 * Number(r.price1)
+    return Math.abs(v - r.usdBalance) / r.usdBalance
+  }
+  const priced = rows.filter(r => Number(r.price0) > 0 && Number(r.price1) > 0 && r.usdBalance > 0)
+  if (!priced.length) return null
+  const straight = priced.reduce((s, r) => s + err(r), 0)
+  const flipped = priced.reduce((s, r) => s + err(swapRow(r)), 0)
+  return flipped < straight
+}
