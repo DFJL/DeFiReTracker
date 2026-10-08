@@ -71,3 +71,5 @@ create policy lp_snapshots_access on crypto.lp_snapshots for all
 create policy lp_events_access on crypto.lp_events for all
   using (crypto.user_has_portfolio_access(portfolio_id))
   with check (crypto.user_has_portfolio_access(portfolio_id));
+
+grant select, insert, update, delete on crypto.lp_positions, crypto.lp_snapshots, crypto.lp_events to authenticated;
