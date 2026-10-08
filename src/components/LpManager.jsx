@@ -6,10 +6,11 @@ import { fmtUsd, fmtQty, fmtDate, pnlClass } from '../utils/format'
 import { StatCard } from './ui/Card'
 import { Modal } from './ui/Modal'
 import { LpPositionForm, LpSnapshotForm } from './LpForms'
+import { LpBeefyImport } from './LpBeefyImport'
 
 const KIND_LABEL = { deposit: 'Deposit', withdraw: 'Withdrawal', performance: 'Performance' }
 
-function PositionDetail({ position, snaps, summary, onAddSnapshot, onDeleteSnapshot, onDeletePosition }) {
+function PositionDetail({ position, snaps, summary, onAddSnapshot, onImport, onDeleteSnapshot, onDeletePosition }) {
   const last = snaps[snaps.length - 1]
   const [t0, t1] = [position.token0?.symbol ?? 'T0', position.token1?.symbol ?? 'T1']
   const holdings = last ? underlyingHoldings(fromDbSnapshot(last)) : []
@@ -18,10 +19,11 @@ function PositionDetail({ position, snaps, summary, onAddSnapshot, onDeleteSnaps
     <div className="bg-surface-2/50 px-4 py-4 space-y-4 text-xs">
       <div className="flex flex-wrap items-center gap-2 justify-between">
         <div className="text-gray-500">
-          {[position.protocol, position.chain, position.pair_type === 'v2' ? 'fees/IL split' : 'unsplit', position.external_ref]
+          {[position.protocol, position.chain, position.pair_type === 'v2' ? 'fees/IL derived' : 'fees as reported', position.external_ref]
             .filter(Boolean).join(' · ')}
         </div>
         <div className="flex gap-2">
+          <button onClick={onImport} className="px-3 py-1 border border-border text-gray-300 hover:text-white rounded">Import Beefy history</button>
           <button onClick={onAddSnapshot} className="px-3 py-1 bg-accent hover:bg-indigo-500 text-white rounded">+ Snapshot</button>
           <button onClick={onDeletePosition} className="px-3 py-1 text-gray-500 hover:text-red-400">Delete position</button>
         </div>
@@ -108,8 +110,8 @@ export function LpManager({ portfolioId, prices }) {
   const totals = rows.reduce((t, r) => r.summary ? {
     value: t.value + r.summary.currentValueUsd,
     pnl: t.pnl + r.summary.pnlUsd,
-    fees: t.fees + r.summary.feesUsd,
-    il: t.il + r.summary.ilUsd,
+    fees: t.fees + (r.summary.feesKnown ? r.summary.feesUsd : 0),
+    il: t.il + (r.summary.feesKnown ? r.summary.ilUsd : 0),
   } : t, { value: 0, pnl: 0, fees: 0, il: 0 })
 
   async function run(fn) {
@@ -173,8 +175,8 @@ export function LpManager({ portfolioId, prices }) {
                     </td>
                     <td className="px-4 py-3 text-right num text-gray-200">{summary ? fmtUsd(summary.currentValueUsd) : '—'}</td>
                     <td className="px-4 py-3 text-right num text-gray-400 hidden md:table-cell">{summary ? fmtUsd(summary.depositedUsd - summary.withdrawnUsd) : '—'}</td>
-                    <td className={`px-4 py-3 text-right num hidden md:table-cell ${pnlClass(summary?.feesUsd)}`}>{summary ? fmtUsd(summary.feesUsd) : '—'}</td>
-                    <td className={`px-4 py-3 text-right num hidden md:table-cell ${pnlClass(summary?.ilUsd)}`}>{summary ? fmtUsd(summary.ilUsd) : '—'}</td>
+                    <td className={`px-4 py-3 text-right num hidden md:table-cell ${pnlClass(summary?.feesUsd)}`}>{summary?.feesKnown ? fmtUsd(summary.feesUsd) : '—'}</td>
+                    <td className={`px-4 py-3 text-right num hidden md:table-cell ${pnlClass(summary?.ilUsd)}`}>{summary?.feesKnown ? fmtUsd(summary.ilUsd) : '—'}</td>
                     <td className={`px-4 py-3 text-right num ${pnlClass(summary?.pnlUsd)}`}>{summary ? fmtUsd(summary.pnlUsd) : '—'}</td>
                   </tr>
                   {openId === position.id && summary && (
@@ -183,6 +185,7 @@ export function LpManager({ portfolioId, prices }) {
                         <PositionDetail
                           position={position} snaps={snaps} summary={summary}
                           onAddSnapshot={() => setModal({ type: 'snapshot', position })}
+                          onImport={() => setModal({ type: 'import', position })}
                           onDeleteSnapshot={id => confirm('Delete this snapshot? Events will be recalculated.') && run(() => lp.deleteSnapshot(position, id))}
                           onDeletePosition={() => confirm(`Delete ${position.name} and all its history?`) && run(() => lp.deletePosition(position.id))}
                         />
@@ -200,6 +203,17 @@ export function LpManager({ portfolioId, prices }) {
         <Modal title="New LP position" onClose={() => setModal(null)}>
           <LpPositionForm assets={assets} onCancel={() => setModal(null)}
             onSave={async fields => { const r = await lp.createPosition(fields); if (!r.error) setModal(null); return r }} />
+        </Modal>
+      )}
+      {modal?.type === 'import' && (
+        <Modal title={`Import Beefy history · ${modal.position.name}`} onClose={() => setModal(null)} wide>
+          <LpBeefyImport
+            position={modal.position}
+            existingCount={lp.snapshots.filter(s => s.position_id === modal.position.id).length}
+            prices={prices}
+            onCancel={() => setModal(null)}
+            onSave={async list => { const r = await lp.addSnapshots(modal.position, list); if (!r.error) setModal(null); return r }}
+          />
         </Modal>
       )}
       {modal?.type === 'snapshot' && (

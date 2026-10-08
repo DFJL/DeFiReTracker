@@ -59,3 +59,22 @@ export async function fetchHistoricalPrices(coingeckoId, fromDate) {
 export function clearHistoricalCache() {
   Object.keys(cache).forEach(k => delete cache[k])
 }
+
+/**
+ * Price of each coin at one moment (DeFiLlama point-in-time endpoint, one call per coin).
+ * Returns { [coingeckoId]: price | null }.
+ */
+export async function fetchPricesAt(coingeckoIds, isoTs) {
+  const t = Math.floor(new Date(isoTs).getTime() / 1000)
+  const entries = await Promise.all(coingeckoIds.map(async id => {
+    try {
+      const res = await fetch(`https://coins.llama.fi/prices/historical/${t}?coins=coingecko:${id}`)
+      if (!res.ok) return [id, null]
+      const data = await res.json()
+      return [id, data.coins?.[`coingecko:${id}`]?.price ?? null]
+    } catch {
+      return [id, null]
+    }
+  }))
+  return Object.fromEntries(entries)
+}
