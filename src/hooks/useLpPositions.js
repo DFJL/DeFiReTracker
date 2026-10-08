@@ -58,6 +58,24 @@ export function useLpPositions(portfolioId) {
     return { error: res.error }
   }
 
+  // Add many snapshots at once (history import): validate the full history, insert, rebuild events once.
+  async function addSnapshots(position, fieldsList) {
+    const existing = snapshots.filter(s => s.position_id === position.id)
+    const candidates = fieldsList.map((f, i) => ({ ...f, id: `new-${i}` }))
+    try {
+      buildEventRows(position, [...existing, ...candidates])
+    } catch (e) {
+      return { error: e }
+    }
+    const { data, error } = await supabase.from('lp_snapshots')
+      .insert(fieldsList.map(f => ({ ...f, position_id: position.id, portfolio_id: portfolioId })))
+      .select()
+    if (error) return { error }
+    const res = await rebuildEvents(position, [...existing, ...data])
+    await load()
+    return { error: res.error }
+  }
+
   async function deleteSnapshot(position, snapshotId) {
     const remaining = snapshots.filter(s => s.position_id === position.id && s.id !== snapshotId)
     try {
@@ -78,5 +96,5 @@ export function useLpPositions(portfolioId) {
     return { error }
   }
 
-  return { positions, snapshots, events, loading, createPosition, addSnapshot, deleteSnapshot, deletePosition, reload: load }
+  return { positions, snapshots, events, loading, createPosition, addSnapshot, addSnapshots, deleteSnapshot, deletePosition, reload: load }
 }

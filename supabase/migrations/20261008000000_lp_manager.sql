@@ -73,3 +73,7 @@ create policy lp_events_access on crypto.lp_events for all
   with check (crypto.user_has_portfolio_access(portfolio_id));
 
 grant select, insert, update, delete on crypto.lp_positions, crypto.lp_snapshots, crypto.lp_events to authenticated;
+
+-- Cumulative fees as reported by the protocol (e.g. Beefy "yield"); used for pools where
+-- fees can't be derived from balances (concentrated liquidity, stable pools).
+alter table crypto.lp_snapshots add column if not exists fees_cum_usd numeric;

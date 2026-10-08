@@ -95,3 +95,15 @@ test('fromDbSnapshot only sets flow when both amounts are present', () => {
   assert.equal(fromDbSnapshot(base).flow, undefined)
   assert.deepEqual(fromDbSnapshot({ ...base, flow0: '2', flow1: '3' }).flow, { amount0: 2, amount1: 3 })
 })
+
+test('non-v2 pools take reported fees and book the rest as IL', () => {
+  const s1 = { ts: '2026-01-01', shares: 100, amount0: 1, amount1: 2000, price0: 2000, price1: 1 }
+  // Same prices, position lost value vs hodl (rebalancing) and protocol reports 50 of fees.
+  const s2 = { ts: '2026-02-01', shares: 100, amount0: 0.9, amount1: 2000, price0: 2000, price1: 1, feesCumUsd: 50 }
+  const sum = summarizePosition([s1, s2], { pairType: 'other' })
+  near(sum.pnlUsd, -200)
+  near(sum.feesUsd, 50)
+  near(sum.ilUsd, -250)
+  assert.equal(sum.feesKnown, true)
+  assert.equal(summarizePosition([s1, { ...s2, feesCumUsd: undefined }], { pairType: 'other' }).feesKnown, false)
+})

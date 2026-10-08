@@ -127,6 +127,19 @@ export function summarizePosition(snapshots, opts = {}) {
   const pnlUsd = currentValueUsd + withdrawnUsd - depositedUsd
   const performanceUsd = sum('performance', 'valueUsd')
 
+  let feesUsd = sum('performance', 'feesUsd')
+  let ilUsd = sum('performance', 'ilUsd')
+  let otherUsd = sum('performance', 'otherUsd')
+  // Pools where fees can't be derived (concentrated liquidity, stable...): take the fees the
+  // protocol reports (cumulative, latest snapshot that has them) and treat the rest as IL.
+  const reported = [...sorted].reverse().find(s => s.feesCumUsd != null)
+  const feesKnown = opts.pairType === 'v2' || reported != null
+  if (opts.pairType !== 'v2' && reported) {
+    feesUsd = reported.feesCumUsd
+    ilUsd = otherUsd - feesUsd
+    otherUsd = 0
+  }
+
   return {
     events,
     depositedUsd,
@@ -134,9 +147,10 @@ export function summarizePosition(snapshots, opts = {}) {
     currentValueUsd,
     pnlUsd,
     priceUsd: sum('performance', 'priceUsd'),
-    ilUsd: sum('performance', 'ilUsd'),
-    feesUsd: sum('performance', 'feesUsd'),
-    otherUsd: sum('performance', 'otherUsd'),
+    ilUsd,
+    feesUsd,
+    otherUsd,
+    feesKnown,
     reconcileDiffUsd: pnlUsd - performanceUsd,
   }
 }
@@ -160,6 +174,7 @@ export function fromDbSnapshot(r) {
     amount1: Number(r.amount1),
     price0: Number(r.price0_usd),
     price1: Number(r.price1_usd),
+    feesCumUsd: r.fees_cum_usd != null ? Number(r.fees_cum_usd) : undefined,
     flow: hasFlow ? { amount0: Number(r.flow0), amount1: Number(r.flow1) } : undefined,
   }
 }

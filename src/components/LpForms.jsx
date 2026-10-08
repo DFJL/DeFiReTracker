@@ -68,7 +68,7 @@ export function LpPositionForm({ assets, onSave, onCancel }) {
           <label className={labelCls}>Pool type</label>
           <select value={form.pair_type} onChange={e => set('pair_type', e.target.value)} className={inputCls}>
             <option value="v2">Constant product (fees / IL split)</option>
-            <option value="other">Other (stable, weighted…)</option>
+            <option value="other">Concentrated / other (fees as reported by protocol)</option>
           </select>
         </div>
         <div>
@@ -141,6 +141,7 @@ export function LpSnapshotForm({ position, snapshots, prices, onSave, onCancel }
     price0: String(priceOf(position.token0) ?? last?.price0_usd ?? ''),
     price1: String(priceOf(position.token1) ?? last?.price1_usd ?? ''),
     flow0: '', flow1: '', notes: '', tx_hash: '',
+    fees_cum_usd: last?.fees_cum_usd != null ? String(last.fees_cum_usd) : '',
   })
   const [showFlow, setShowFlow] = useState(false)
   const [saving, setSaving] = useState(false)
@@ -153,6 +154,7 @@ export function LpSnapshotForm({ position, snapshots, prices, onSave, onCancel }
     ts: new Date(form.ts).toISOString(),
     shares: num(form.shares), amount0: num(form.amount0), amount1: num(form.amount1),
     price0: num(form.price0), price1: num(form.price1),
+    feesCumUsd: form.fees_cum_usd !== '' ? num(form.fees_cum_usd) : undefined,
     flow: form.flow0 !== '' && form.flow1 !== '' ? { amount0: num(form.flow0), amount1: num(form.flow1) } : undefined,
   }
   const complete = [candidate.shares, candidate.amount0, candidate.amount1, candidate.price0, candidate.price1].every(Number.isFinite)
@@ -181,6 +183,7 @@ export function LpSnapshotForm({ position, snapshots, prices, onSave, onCancel }
       ts: candidate.ts,
       shares: candidate.shares, amount0: candidate.amount0, amount1: candidate.amount1,
       price0_usd: candidate.price0, price1_usd: candidate.price1,
+      fees_cum_usd: candidate.feesCumUsd ?? null,
       flow0: candidate.flow?.amount0 ?? null, flow1: candidate.flow?.amount1 ?? null,
       source: 'manual', tx_hash: form.tx_hash.trim() || null, notes: form.notes.trim() || null,
     })
@@ -220,6 +223,14 @@ export function LpSnapshotForm({ position, snapshots, prices, onSave, onCancel }
         <div className="grid grid-cols-2 gap-3">
           {field('flow0', `${symbols[0]} deposited / withdrawn`)}
           {field('flow1', `${symbols[1]} deposited / withdrawn`)}
+        </div>
+      )}
+
+      {position.pair_type !== 'v2' && (
+        <div>
+          <label className={labelCls}>Fees earned to date (USD, as reported by the protocol)</label>
+          <input type="number" step="any" value={form.fees_cum_usd} onChange={e => set('fees_cum_usd', e.target.value)}
+            className={inputCls} placeholder="e.g. Beefy “Yield”" />
         </div>
       )}
 
