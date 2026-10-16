@@ -18,6 +18,7 @@ const EMPTY = {
   _coingeckoId: '',
   _symbol: '',
   _name: '',
+  _fundsBucketId: '',
 }
 
 function buildInitial(initial, nlPrefill) {
@@ -33,6 +34,7 @@ function buildInitial(initial, nlPrefill) {
       _coingeckoId: a.coingecko_id ?? '',
       _symbol: a.symbol ?? '',
       _name: a.name ?? '',
+      _fundsBucketId: initial.funds_bucket_id ?? '',
     }
   }
   if (nlPrefill) {
@@ -69,8 +71,21 @@ export function TransactionForm({ portfolioId, initial, nlPrefill, onSave, onCan
   const [assetResults, setAssetResults] = useState([])
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState(null)
+  const [fireoracleBuckets, setFireoracleBuckets] = useState([])
 
   const isCash = CASH_TYPES.has(form.type)
+
+  // FireOracle buckets live in the shared project's public schema, not crypto —
+  // fetched only when a sell might fund one, to label the "financia" picker.
+  useEffect(() => {
+    if (form.type !== 'sell') return
+    supabase.schema('public')
+      .from('user_investment_buckets')
+      .select('id, name, is_active')
+      .eq('is_active', true)
+      .order('sort_order')
+      .then(({ data }) => setFireoracleBuckets(data ?? []))
+  }, [form.type])
 
   // Auto-search asset when pre-filled from NL
   useEffect(() => {
@@ -146,6 +161,7 @@ export function TransactionForm({ portfolioId, initial, nlPrefill, onSave, onCan
         fee_usd: parseFloat(form.fee_usd || '0'),
         date: new Date(form.date).toISOString(),
         notes: form.notes || null,
+        funds_bucket_id: form.type === 'sell' ? (form._fundsBucketId || null) : null,
       }
       if (initial?.id) payload.id = initial.id
 
@@ -269,6 +285,27 @@ export function TransactionForm({ portfolioId, initial, nlPrefill, onSave, onCan
               <input value={form.notes} onChange={e => set('notes', e.target.value)} placeholder="Optional" className={inputCls} />
             </div>
           </div>
+
+          {form.type === 'sell' && (
+            <div>
+              <label className={labelCls}>Financia inversión en FireOracle (opcional)</label>
+              <select
+                value={form._fundsBucketId}
+                onChange={e => set('_fundsBucketId', e.target.value)}
+                className={inputCls}
+              >
+                <option value="">— ninguna, se queda en cripto —</option>
+                {fireoracleBuckets.map(b => (
+                  <option key={b.id} value={b.id}>{b.name}</option>
+                ))}
+              </select>
+              {form._fundsBucketId && (
+                <p className="mt-1 text-[11px] text-gray-500">
+                  El neto de esta venta aparecerá como depósito en el historial de ese bucket en FireOracle (no toca ningún sobre/cuenta).
+                </p>
+              )}
+            </div>
+          )}
         </>
       )}
 
