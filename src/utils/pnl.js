@@ -23,8 +23,10 @@ export function computeAssetPnl(transactions, currentPrice) {
       grossInvested += qty * price + fee
     } else if (tx.type === 'sell' || tx.type === 'transfer_out') {
       const avgCostNow = totalQty > 0 ? totalCost / totalQty : 0
-      // transfer_out at price=0 means moved to LP/protocol — treat as cost-neutral to avoid phantom loss
-      const effectivePrice = (tx.type === 'transfer_out' && price === 0) ? avgCostNow : price
+      // Either type at price=0 means moved to LP/protocol or a pure reconciliation
+      // adjustment, not a real sale — treat as cost-neutral to avoid a phantom
+      // realized loss equal to the full cost basis of the quantity.
+      const effectivePrice = price === 0 ? avgCostNow : price
       realizedPnl += (effectivePrice - avgCostNow) * qty - fee
       totalCost -= avgCostNow * qty
       totalQty -= qty
